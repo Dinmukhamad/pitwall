@@ -30,6 +30,9 @@ async def health() -> dict:
         "cache_backend": cache.backend,
         "db_enabled": db.enabled,
         "track_catalog": track_catalog.available(),
+        # Меняется при каждом деплое — по нему видно, что применилась новая
+        # сборка, а не отдаются данные, закэшированные предыдущей.
+        "cache_version": settings.cache_version,
         # Сервер сам диктует клиенту темп опроса — так лимиты OpenF1
         # соблюдаются независимо от того, сколько открыто вкладок.
         "poll_interval_ms": settings.poll_interval_ms,

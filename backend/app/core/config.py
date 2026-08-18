@@ -15,6 +15,29 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _data_fingerprint() -> str:
+    """Отпечаток набора данных — запасной вариант, если платформа не отдаёт
+    хэш коммита. Меняется при пересборке (файлы перезаписываются), но не при
+    простом перезапуске контейнера, поэтому кэш не сбрасывается зря.
+
+    Читается только метаинформация файлов, содержимое не разбирается.
+    """
+    import hashlib
+    from pathlib import Path
+
+    from app import __version__
+
+    h = hashlib.sha1(__version__.encode())
+    fixtures = Path(__file__).resolve().parent.parent / "sources" / "fixtures"
+    try:
+        for p in sorted(fixtures.glob("*.json")):
+            st = p.stat()
+            h.update(f"{p.name}:{st.st_size}:{int(st.st_mtime)}".encode())
+    except OSError:
+        pass
+    return h.hexdigest()[:12]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="PITWALL_",
@@ -47,6 +70,11 @@ class Settings(BaseSettings):
     # ограничено размером бакета, а не TTL).
     frame_bucket_s: float = 1.0
     cache_ttl_window_s: int = 300
+    # Версия пространства имён кэша. Redis переживает передеплой, поэтому без
+    # версионирования новый код читал бы данные, закэшированные старым (список
+    # пилотов, геометрия трассы, стинты) — на экране получалась бы смесь старых
+    # и новых данных. Значение подставляется из хэша коммита при деплое.
+    cache_version: str | None = Field(default=None)
 
     # --- Database (Postgres, optional) ------------------------------------
     # When unset the app runs without persistence (nothing is stored, but all
@@ -83,6 +111,16 @@ class Settings(BaseSettings):
             self.database_url = os.environ.get("DATABASE_URL")
         if not self.redis_url:
             self.redis_url = os.environ.get("REDIS_URL")
+
+        if not self.cache_version:
+            # Render (и большинство PaaS) отдаёт хэш коммита в окружении —
+            # он меняется при каждом деплое, что и нужно.
+            commit = (
+                os.environ.get("RENDER_GIT_COMMIT")
+                or os.environ.get("SOURCE_VERSION")       # Heroku
+                or os.environ.get("GIT_COMMIT")
+            )
+            self.cache_version = commit[:12] if commit else _data_fingerprint()
 
         if self.database_url:
             u = self.database_url

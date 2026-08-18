@@ -69,7 +69,18 @@ class Cache:
         if self._redis is not None:
             await self._redis.aclose()
 
+    def _k(self, key: str) -> str:
+        """Ключ в пространстве имён текущей сборки.
+
+        Redis живёт дольше контейнера, поэтому после деплоя старые значения
+        (список пилотов, геометрия, стинты) иначе продолжали бы отдаваться
+        новому коду. Префикс меняется вместе с версией — старые ключи просто
+        перестают использоваться и истекают по TTL.
+        """
+        return f"pw:{settings.cache_version}:{key}"
+
     async def get_json(self, key: str) -> Any | None:
+        key = self._k(key)
         try:
             raw = await self._redis.get(key) if self._redis else self._mem.get(key)
         except Exception as exc:  # noqa: BLE001
@@ -78,6 +89,7 @@ class Cache:
         return json.loads(raw) if raw else None
 
     async def set_json(self, key: str, value: Any, ttl: int | None = None) -> None:
+        key = self._k(key)
         ttl = settings.cache_ttl_s if ttl is None else ttl
         raw = json.dumps(value, default=str)
         try:
