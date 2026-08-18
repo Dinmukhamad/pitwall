@@ -8,8 +8,11 @@ venv/
 node_modules/
 .DS_Store
 
-# Артефакты сборки — создаются скриптами, в репозитории не хранятся:
-#   python scripts/fetch_circuits.py    -> каталог контуров трасс (сторонние данные)
-#   python scripts/generate_fixture.py  -> демо-сессия (~10 МБ)
+# Каталог контуров трасс — сторонние данные (OpenStreetMap/ODbL).
+# Намеренно НЕ хранится в репозитории, чтобы не перераспространять чужой
+# набор (ТЗ L-02); скачивается при сборке: python scripts/fetch_circuits.py
 backend/app/data/circuits.json
-backend/app/sources/fixtures/
+
+# Демо-сессия (backend/app/sources/fixtures/) намеренно ОСТАЁТСЯ в репозитории:
+# это наши собственные сгенерированные данные, и так деплой не зависит от
+# внешних источников на этапе сборки. Пересоздать: make fixture
