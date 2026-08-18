@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.core.config import settings
 from app.sources.base import DataSource
-from app.sources.fixture import FixtureSource
+from app.sources.simulated import SimulatedSource
 from app.sources.openf1 import OpenF1Source
 
 _INSTANCE: DataSource | None = None
@@ -12,7 +12,9 @@ _INSTANCE: DataSource | None = None
 def build_source() -> DataSource:
     if settings.data_source == "openf1":
         return OpenF1Source()
-    return FixtureSource()
+    # «fixture» исторически означает демо-режим; теперь это симулятор
+    # всего календаря, а не один заранее сгенерированный заезд.
+    return SimulatedSource()
 
 
 def get_source() -> DataSource:

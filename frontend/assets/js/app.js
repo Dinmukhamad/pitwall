@@ -42,12 +42,15 @@ async function loadSessions() {
   const sessions = await api.sessions();
   const sel = document.getElementById("session-select");
   sel.innerHTML = "";
-  for (const s of sessions) {
+  // Подпись: номер этапа, страна и трасса — так список читается как календарь.
+  // Этапы уже отсортированы по дате, поэтому номер = порядковый индекс.
+  sessions.forEach((s, i) => {
     const opt = document.createElement("option");
     opt.value = s.session_key;
-    opt.textContent = `${s.year ?? ""} · ${s.country ?? s.circuit ?? "Race"} · ${s.session_name ?? ""}`.trim();
+    const where = [s.country, s.circuit].filter(Boolean).join(" · ");
+    opt.textContent = `${i + 1}. ${where || s.session_name || "Race"}`;
     sel.appendChild(opt);
-  }
+  });
   sel.onchange = () => loadSession(+sel.value);
   if (sessions.length) await loadSession(sessions[0].session_key);
 }

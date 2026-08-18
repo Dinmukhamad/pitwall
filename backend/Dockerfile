@@ -12,10 +12,9 @@ COPY . /app/backend
 # frontend is mounted/copied at compose level to /app/frontend
 WORKDIR /app/backend
 
-# Артефакты данных: каталог трасс (запасная геометрия) и демо-сессия.
-# Оба шага не критичны — сбой не должен ломать сборку образа.
-RUN python scripts/fetch_circuits.py || true \
- && python scripts/generate_fixture.py || true
+# Каталог контуров трасс: запасная геометрия (R-05) и трассы демо-режима.
+# Шаг некритичен — сбой не должен ломать сборку образа.
+RUN python scripts/fetch_circuits.py || true
 
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

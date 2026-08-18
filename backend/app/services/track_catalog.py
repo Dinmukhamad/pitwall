@@ -80,6 +80,11 @@ def find(*hints: str | None) -> dict | None:
     return None
 
 
+def by_id(circuit_id: str) -> dict | None:
+    """Трасса по идентификатору каталога (например `hu-1986`)."""
+    return _catalog().get(circuit_id)
+
+
 def attribution() -> str:
     if not CATALOG_PATH.exists():
         return ""

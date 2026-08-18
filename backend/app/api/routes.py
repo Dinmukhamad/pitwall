@@ -30,6 +30,8 @@ async def health() -> dict:
         "cache_backend": cache.backend,
         "db_enabled": db.enabled,
         "track_catalog": track_catalog.available(),
+        # Сколько гонок доступно для выбора — сразу видно, весь ли сезон на месте.
+        "races_available": len(await service.list_sessions()),
         # Меняется при каждом деплое — по нему видно, что применилась новая
         # сборка, а не отдаются данные, закэшированные предыдущей.
         "cache_version": settings.cache_version,

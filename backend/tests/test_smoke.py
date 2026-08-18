@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 
-SK = 9999
+SK = 9011          # Гран-при Венгрии, 11-й этап сезона-2026
 
 
 def test_health():
@@ -18,7 +18,24 @@ def test_health():
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "ok"
-        assert body["data_source"] == "fixture"
+        assert body["data_source"] == "fixture"   # демо-режим
+        assert body["races_available"] == 22       # весь календарь-2026
+
+
+def test_all_season_races_are_selectable():
+    """В выборе гонки должен быть весь сезон, а не один демо-заезд."""
+    with TestClient(app) as c:
+        sessions = c.get("/api/sessions").json()
+
+    assert len(sessions) == 22, "в списке не весь календарь сезона"
+    assert all(s["year"] == 2026 for s in sessions)
+    # Этапы идут по возрастанию даты — как в календаре.
+    dates = [s["date_start"] for s in sessions]
+    assert dates == sorted(dates)
+    # Ключи уникальны, иначе выбор гонки схлопнется.
+    assert len({s["session_key"] for s in sessions}) == 22
+    names = {s["circuit"] for s in sessions}
+    assert {"Monte-Carlo", "Budapest", "Silverstone", "Monza"} <= names
 
 
 def test_sessions_and_drivers():
@@ -132,3 +149,21 @@ def test_news_skeleton():
     with TestClient(app) as c:
         assert c.get("/api/news/sources").json()
         assert c.get("/api/news", params={"lang": "ru"}).json()["items"] == []
+
+
+def test_each_round_runs_on_its_own_circuit():
+    """Разные этапы — разные трассы, а не один контур на весь сезон."""
+    import math
+
+    with TestClient(app) as c:
+        lengths = {}
+        for sk, name in ((9006, "Монако"), (9010, "Спа"), (9013, "Монца")):
+            pts = c.get(f"/api/sessions/{sk}/track").json()["points"]
+            lengths[name] = sum(
+                math.dist((pts[i]["x"], pts[i]["y"]), (pts[i - 1]["x"], pts[i - 1]["y"]))
+                for i in range(1, len(pts))
+            )
+
+    # Монако заметно короче Спа — если контуры совпали, тест это поймает.
+    assert lengths["Монако"] < lengths["Монца"] < lengths["Спа"]
+    assert len(set(round(v) for v in lengths.values())) == 3
