@@ -121,6 +121,7 @@ async function refresh() {
 
     renderTower(selectDriver);
     renderTyres();
+    seedRenderPositions();
     maps.forEach((m) => m.redraw());
 
     if (S.activeDriver != null) {
@@ -139,6 +140,32 @@ async function refresh() {
   }
 }
 
+// ---------- Плавное движение машин ----------
+// Сервер отдаёт координаты редко (на живых данных — раз в ~1.5 с из-за лимитов
+// OpenF1). Чтобы точки не прыгали, каждая машина «доезжает» к новой позиции.
+function seedRenderPositions() {
+  for (const p of S.latestPositions) {
+    if (!S.renderPos[p.driver_number]) S.renderPos[p.driver_number] = { x: p.x, y: p.y };
+  }
+}
+
+function animate() {
+  let moved = false;
+  for (const p of S.latestPositions) {
+    const rp = S.renderPos[p.driver_number];
+    if (!rp) continue;
+    const dx = p.x - rp.x, dy = p.y - rp.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.5) { rp.x = p.x; rp.y = p.y; continue; }
+    // Экспоненциальное сближение; при большом скачке (новый круг) — телепорт.
+    const k = dist > 400 ? 1 : 0.18;
+    rp.x += dx * k; rp.y += dy * k;
+    moved = true;
+  }
+  if (moved) maps.forEach((m) => m.redraw());
+  requestAnimationFrame(animate);
+}
+
 function selectDriver(num) {
   S.activeDriver = num;
   renderTower(selectDriver);
@@ -150,16 +177,25 @@ function selectDriver(num) {
 
 // ---------- Playback clock ----------
 let timer = null;
+let lastFetch = 0;
 function play() {
   if (S.playing) return;
   S.playing = true;
   document.getElementById("play-btn").textContent = "⏸";
-  const TICK = 250;
+  const TICK = 100;
+  lastFetch = 0;
   timer = setInterval(() => {
+    // Часы идут плавно (100 мс), а к серверу обращаемся в темпе
+    // pollIntervalMs — иначе на живых данных мы бы упёрлись в лимиты OpenF1.
     S.offset += (TICK / 1000) * S.speed;
     if (S.offset >= S.duration) { S.offset = S.duration; stop(); }
     syncScrubber();
-    refresh();
+    updateClock();
+    const now = performance.now();
+    if (now - lastFetch >= S.pollIntervalMs) {
+      lastFetch = now;
+      refresh();
+    }
   }, TICK);
 }
 function stop() {
@@ -226,9 +262,12 @@ async function init() {
   wireControls();
   try {
     const h = await api.health();
-    setConn("ok", `${h.data_source} · ${h.cache_backend}`);
+    S.pollIntervalMs = h.poll_interval_ms || 300;
+    const mode = h.data_source === "openf1" ? "OpenF1" : "демо";
+    setConn("ok", `${mode} · ${h.cache_backend}`);
   } catch { setConn("err", "backend недоступен"); }
   await loadSessions();
   updateClock();
+  requestAnimationFrame(animate);
 }
 init();

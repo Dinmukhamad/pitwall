@@ -22,7 +22,9 @@ services:
     runtime: python
     plan: free             # free-веб «засыпает» при простое; первый запрос будит его
     rootDir: backend
-    buildCommand: "pip install -r requirements.txt && python scripts/generate_fixture.py"
+    # fetch_circuits — реальные контуры трасс (запасная геометрия, R-05);
+    # generate_fixture — демо-сессия. Оба артефакта не хранятся в git.
+    buildCommand: "pip install -r requirements.txt && python scripts/fetch_circuits.py && python scripts/generate_fixture.py"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /api/health
     envVars:

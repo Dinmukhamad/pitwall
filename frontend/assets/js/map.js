@@ -151,7 +151,8 @@ export class MapView {
     let best = null, bd = 14 * 14;
     for (const p of S.latestPositions) {
       if (!this.filter.has(p.driver_number)) continue;
-      const [sx, sy] = this._project(p.x, p.y);
+      const rp = S.renderPos[p.driver_number] || p;
+      const [sx, sy] = this._project(rp.x, rp.y);
       const d = (sx - mx) ** 2 + (sy - my) ** 2;
       if (d < bd) { bd = d; best = p.driver_number; }
     }
@@ -188,12 +189,13 @@ export class MapView {
       ctx.fillRect(sx, sy, 5, 5);
     }
 
-    // cars
+    // cars — рисуем сглаженные позиции (см. S.renderPos)
     const activeNum = S.activeDriver;
     const p1 = S.latestTiming.find((r) => r.position === 1)?.driver_number;
     for (const pos of S.latestPositions) {
       if (!this.filter.has(pos.driver_number)) continue;
-      const [sx, sy] = this._project(pos.x, pos.y);
+      const rp = S.renderPos[pos.driver_number] || pos;
+      const [sx, sy] = this._project(rp.x, rp.y);
       const col = teamColor(pos.driver_number);
       const active = pos.driver_number === activeNum;
       ctx.beginPath();

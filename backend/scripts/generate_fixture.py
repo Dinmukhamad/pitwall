@@ -1,7 +1,14 @@
-"""Generate a bundled sample session in OpenF1's raw wire shape.
+"""Сгенерировать демо-сессию в «сыром» формате OpenF1.
 
-Deterministic (fixed seed) so the fixture is reproducible. Output lands in
-``app/sources/fixtures/*.json``. Run:  python scripts/generate_fixture.py
+Демо-режим нужен, чтобы приложение работало без сети и без ключей: полный грид
+сезона-2024 (20 пилотов), реальный контур трассы из каталога (если он собран
+скриптом fetch_circuits.py) и правдоподобная динамика гонки.
+
+Это ИМИТАЦИЯ для демонстрации, а не запись реальной гонки: позиции, круги и
+телеметрия рассчитываются моделью, а не взяты из архива. Реальные данные
+включаются переменной PITWALL_DATA_SOURCE=openf1.
+
+Детерминирован (фиксированный seed). Запуск: python scripts/generate_fixture.py
 """
 from __future__ import annotations
 
@@ -13,159 +20,188 @@ from pathlib import Path
 
 random.seed(2024)
 
-OUT = Path(__file__).resolve().parent.parent / "app" / "sources" / "fixtures"
+BASE = Path(__file__).resolve().parent.parent
+OUT = BASE / "app" / "sources" / "fixtures"
+CATALOG = BASE / "app" / "data" / "circuits.json"
 OUT.mkdir(parents=True, exist_ok=True)
 
 SESSION_KEY = 9999
 MEETING_KEY = 1999
 YEAR = 2024
-T0 = datetime(2024, 5, 26, 13, 0, 0, tzinfo=timezone.utc)  # race start
+T0 = datetime(2024, 5, 26, 13, 0, 0, tzinfo=timezone.utc)
 
-LAPS = 6
-LAP_TIME = 78.0            # nominal seconds per lap
-LOC_HZ = 3.0              # location sample rate
-CAR_HZ = 2.0             # car_data sample rate
+# Трасса демо-сессии (ищется в каталоге по этому ключу).
+CIRCUIT_ID = "mc-1929"
+CIRCUIT_LOCATION = "Monaco"
+CIRCUIT_COUNTRY = "Monaco"
+CIRCUIT_NAME = "Circuit de Monaco"
 
+LAPS = 8
+LAP_TIME = 74.0            # опорное время круга, с
+# Частоты подобраны под демо: карта плавная за счёт интерполяции на клиенте,
+# а объём данных остаётся приемлемым по памяти на бесплатном хостинге.
+LOC_HZ = 2.0               # частота выборки координат
+CAR_HZ = 2.0               # частота выборки телеметрии
+
+# --- Реальный грид сезона-2024: номер, акроним, имя, команда, цвет (OpenF1) ---
 DRIVERS = [
-    # number, acronym, full name, team, colour (hex, no '#')
-    (1,  "VER", "Max Verstappen",   "Red Bull Racing", "3671C6"),
-    (16, "LEC", "Charles Leclerc",  "Ferrari",         "E80020"),
-    (4,  "NOR", "Lando Norris",     "McLaren",         "FF8000"),
-    (44, "HAM", "Lewis Hamilton",   "Mercedes",        "27F4D2"),
-    (14, "ALO", "Fernando Alonso",  "Aston Martin",    "229971"),
-    (81, "PIA", "Oscar Piastri",    "McLaren",         "FF8000"),
+    (1,  "VER", "Max Verstappen",     "Red Bull Racing", "3671C6"),
+    (11, "PER", "Sergio Perez",       "Red Bull Racing", "3671C6"),
+    (16, "LEC", "Charles Leclerc",    "Ferrari",         "E8002D"),
+    (55, "SAI", "Carlos Sainz",       "Ferrari",         "E8002D"),
+    (4,  "NOR", "Lando Norris",       "McLaren",         "FF8000"),
+    (81, "PIA", "Oscar Piastri",      "McLaren",         "FF8000"),
+    (44, "HAM", "Lewis Hamilton",     "Mercedes",        "27F4D2"),
+    (63, "RUS", "George Russell",     "Mercedes",        "27F4D2"),
+    (14, "ALO", "Fernando Alonso",    "Aston Martin",    "229971"),
+    (18, "STR", "Lance Stroll",       "Aston Martin",    "229971"),
+    (10, "GAS", "Pierre Gasly",       "Alpine",          "0093CC"),
+    (31, "OCO", "Esteban Ocon",       "Alpine",          "0093CC"),
+    (23, "ALB", "Alexander Albon",    "Williams",        "64C4FF"),
+    (2,  "SAR", "Logan Sargeant",     "Williams",        "64C4FF"),
+    (22, "TSU", "Yuki Tsunoda",       "RB",              "6692FF"),
+    (3,  "RIC", "Daniel Ricciardo",   "RB",              "6692FF"),
+    (77, "BOT", "Valtteri Bottas",    "Kick Sauber",     "52E252"),
+    (24, "ZHO", "Zhou Guanyu",        "Kick Sauber",     "52E252"),
+    (27, "HUL", "Nico Hulkenberg",    "Haas F1 Team",    "B6BABD"),
+    (20, "MAG", "Kevin Magnussen",    "Haas F1 Team",    "B6BABD"),
 ]
 
-# --- Track geometry (a closed parametric loop) ---------------------------
-A, B = 3000.0, 550.0
-C, D = 2100.0, 850.0
+# ---------------------------------------------------------------------------
+# Геометрия трассы: реальный контур из каталога, иначе — синтетическая петля.
+# ---------------------------------------------------------------------------
+def load_track() -> tuple[list[tuple[float, float]], str]:
+    if CATALOG.exists():
+        try:
+            data = json.loads(CATALOG.read_text(encoding="utf-8"))
+            c = data.get("circuits", {}).get(CIRCUIT_ID)
+            if c and len(c.get("points", [])) > 30:
+                pts = [(float(p[0]), float(p[1])) for p in c["points"]]
+                return pts, f"каталог ({c['name']}, {c['measured_m']} м)"
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! каталог не прочитан ({exc})")
+
+    # Запасной вариант — параметрическая петля.
+    A, B, C, D = 3000.0, 550.0, 2100.0, 850.0
+    pts = []
+    for i in range(400):
+        th = 2 * math.pi * i / 400
+        pts.append((A * math.cos(th) + B * math.cos(3 * th),
+                    C * math.sin(th) + D * math.sin(2 * th)))
+    return pts, "синтетическая петля (каталог не собран)"
 
 
-def track_xy(theta: float) -> tuple[float, float]:
-    x = A * math.cos(theta) + B * math.cos(3 * theta)
-    y = C * math.sin(theta) + D * math.sin(2 * theta)
-    return x, y
+TRACK, TRACK_SRC = load_track()
+
+# Замкнутая ломаная + таблица длин дуг: позиция по доле круга -> координаты.
+_CUM = [0.0]
+for i in range(1, len(TRACK)):
+    _CUM.append(_CUM[-1] + math.hypot(TRACK[i][0] - TRACK[i - 1][0],
+                                      TRACK[i][1] - TRACK[i - 1][1]))
+_CLOSE = math.hypot(TRACK[0][0] - TRACK[-1][0], TRACK[0][1] - TRACK[-1][1])
+TRACK_LEN = _CUM[-1] + _CLOSE
 
 
-# Precompute arc-length table for distance<->theta mapping.
-_STEPS = 2000
-_thetas = [2 * math.pi * i / _STEPS for i in range(_STEPS + 1)]
-_pts = [track_xy(t) for t in _thetas]
-_cum = [0.0]
-for i in range(1, len(_pts)):
-    dx = _pts[i][0] - _pts[i - 1][0]
-    dy = _pts[i][1] - _pts[i - 1][1]
-    _cum.append(_cum[-1] + math.hypot(dx, dy))
-TRACK_LEN = _cum[-1]
-
-# Local speed factor: slower through tight corners (high curvature).
-def _curvature_speed(theta: float) -> float:
-    # crude: derivative magnitude -> normalize
-    h = 1e-3
-    x1, y1 = track_xy(theta - h)
-    x2, y2 = track_xy(theta + h)
-    d = math.hypot(x2 - x1, y2 - y1) / (2 * h)
-    return d
+def point_at(frac: float) -> tuple[float, float]:
+    """Координаты на доле круга frac ∈ [0,1) с линейной интерполяцией."""
+    target = (frac % 1.0) * TRACK_LEN
+    if target >= _CUM[-1]:                      # замыкающий сегмент
+        t = (target - _CUM[-1]) / max(_CLOSE, 1e-9)
+        x0, y0 = TRACK[-1]; x1, y1 = TRACK[0]
+        return x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+    lo, hi = 0, len(_CUM) - 1
+    while lo < hi - 1:                          # двоичный поиск сегмента
+        mid = (lo + hi) // 2
+        if _CUM[mid] <= target: lo = mid
+        else: hi = mid
+    seg = max(_CUM[lo + 1] - _CUM[lo], 1e-9)
+    t = (target - _CUM[lo]) / seg
+    x0, y0 = TRACK[lo]; x1, y1 = TRACK[lo + 1]
+    return x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
 
 
-_speeds = [_curvature_speed(t) for t in _thetas]
-_smax, _smin = max(_speeds), min(_speeds)
+def local_speed(frac: float) -> float:
+    """Скорость по кривизне: в поворотах медленно, на прямых быстро."""
+    d = 0.004
+    x0, y0 = point_at(frac - d)
+    x1, y1 = point_at(frac)
+    x2, y2 = point_at(frac + d)
+    a1 = math.atan2(y1 - y0, x1 - x0)
+    a2 = math.atan2(y2 - y1, x2 - x1)
+    turn = abs((a2 - a1 + math.pi) % (2 * math.pi) - math.pi)   # 0=прямая
+    straightness = max(0.0, 1.0 - turn / 0.55)
+    return 95.0 + straightness * 215.0                            # км/ч
 
 
-def speed_at(theta: float) -> float:
-    theta = theta % (2 * math.pi)
-    idx = int(theta / (2 * math.pi) * _STEPS)
-    s = _speeds[idx]
-    norm = (s - _smin) / (_smax - _smin + 1e-9)   # 0..1
-    return 90.0 + norm * 240.0                      # km/h, ~90 (corner) .. 330 (straight)
+DRS_ZONES = [(0.02, 0.16), (0.55, 0.66)]
 
 
-# DRS zone: enabled while theta in a straight-ish arc.
-DRS_LO, DRS_HI = 0.15, 0.75  # in units of full lap (0..1)
-
-
-def in_drs_zone(lap_frac: float) -> bool:
-    return DRS_LO <= (lap_frac % 1.0) <= DRS_HI
+def in_drs_zone(frac: float) -> bool:
+    f = frac % 1.0
+    return any(a <= f <= b for a, b in DRS_ZONES)
 
 
 def iso(dt: datetime) -> str:
-    return dt.isoformat().replace("+00:00", "+00:00")
+    return dt.isoformat()
 
 
-# --- Per-driver pace model ------------------------------------------------
-# Slightly different pace + start offset so order evolves and cars spread out.
-pace = {}
-start_offset = {}
-for i, (num, *_rest) in enumerate(DRIVERS):
-    pace[num] = 1.0 + (i * 0.006) + random.uniform(-0.002, 0.002)  # >1 = slower
-    start_offset[num] = i * 3.2  # grid gap in seconds
+# --- Модель гонки -----------------------------------------------------------
+# Все машины стартуют одновременно, но с разных слотов решётки (8 м между
+# слотами). Дальше поле растягивается за счёт разницы в темпе. Разброс
+# «дыхания» темпа нарастает постепенно, иначе на первых секундах порядок
+# определялся бы шумом, а не стартовой позицией.
+GRID_SLOT_M = 8.0
+grid_frac: dict[int, float] = {}
+pace: dict[int, float] = {}
+for i, (num, *_r) in enumerate(DRIVERS):
+    pace[num] = 1.0 + i * 0.0034 + random.uniform(-0.0011, 0.0011)
+    grid_frac[num] = i * GRID_SLOT_M / TRACK_LEN
 
 
-def driver_progress(num: int, t: float) -> float:
-    """Total distance travelled (in 'laps', float) at race time t seconds."""
-    eff_t = max(0.0, t - start_offset[num])
-    # small per-lap noise via sine so intervals wobble realistically
-    wobble = 0.01 * math.sin(eff_t / 11.0 + num)
-    return eff_t / (LAP_TIME * pace[num]) + wobble
+def progress(num: int, t: float) -> float:
+    """Пройденная дистанция в кругах (дробное) к моменту t."""
+    if t <= 0:
+        return -grid_frac[num]
+    base = t / (LAP_TIME * pace[num])
+    breathing = 0.012 * math.sin(t / 13.0 + num) * min(1.0, t / 90.0)
+    return base - grid_frac[num] + breathing
 
 
-def theta_of_progress(prog: float) -> float:
-    return 2 * math.pi * (prog % 1.0)
-
-
-RACE_DUR = LAP_TIME * LAPS * max(pace.values()) + 8
+RACE_DUR = LAP_TIME * LAPS * max(pace.values()) + 10
 
 # ---------------------------------------------------------------------------
 sessions = [{
-    "session_key": SESSION_KEY,
-    "meeting_key": MEETING_KEY,
-    "location": "Monaco",
-    "country_name": "Monaco",
-    "circuit_short_name": "Monaco",
-    "session_name": "Race",
-    "session_type": "Race",
-    "year": YEAR,
-    "date_start": iso(T0),
-    "date_end": iso(T0 + timedelta(seconds=RACE_DUR)),
+    "session_key": SESSION_KEY, "meeting_key": MEETING_KEY,
+    "location": CIRCUIT_LOCATION, "country_name": CIRCUIT_COUNTRY,
+    "circuit_short_name": CIRCUIT_LOCATION, "circuit_name": CIRCUIT_NAME,
+    "session_name": "Race", "session_type": "Race", "year": YEAR,
+    "date_start": iso(T0), "date_end": iso(T0 + timedelta(seconds=RACE_DUR)),
 }]
 
 meetings = [{
-    "meeting_key": MEETING_KEY,
-    "meeting_name": "Monaco Grand Prix",
-    "meeting_official_name": "FORMULA 1 GRAND PRIX DE MONACO 2024 (sample)",
-    "country_name": "Monaco",
-    "location": "Monte Carlo",
-    "year": YEAR,
-    "date_start": iso(T0),
+    "meeting_key": MEETING_KEY, "meeting_name": "Monaco Grand Prix (демо)",
+    "meeting_official_name": "Pit Wall demo session — имитация, не реальная гонка",
+    "country_name": CIRCUIT_COUNTRY, "location": CIRCUIT_LOCATION,
+    "year": YEAR, "date_start": iso(T0),
 }]
 
 drivers = [{
-    "session_key": SESSION_KEY,
-    "meeting_key": MEETING_KEY,
-    "driver_number": num,
-    "name_acronym": acr,
-    "full_name": full,
-    "team_name": team,
-    "team_colour": colour,
+    "session_key": SESSION_KEY, "meeting_key": MEETING_KEY,
+    "driver_number": num, "name_acronym": acr, "full_name": full,
+    "team_name": team, "team_colour": colour,
 } for (num, acr, full, team, colour) in DRIVERS]
 
-# --- Sampled streams ------------------------------------------------------
+# --- Потоки координат и телеметрии -----------------------------------------
 location: list[dict] = []
 car_data: list[dict] = []
-position: list[dict] = []
-intervals: list[dict] = []
+loc_dt, car_dt = 1.0 / LOC_HZ, 1.0 / CAR_HZ
 
-loc_dt = 1.0 / LOC_HZ
-car_dt = 1.0 / CAR_HZ
-
-# location + car_data
 for (num, *_r) in DRIVERS:
     t = 0.0
     while t <= RACE_DUR:
-        prog = driver_progress(num, t)
-        if prog >= 0:
-            theta = theta_of_progress(prog)
-            x, y = track_xy(theta)
+        pr = progress(num, t)
+        if pr >= 0:
+            x, y = point_at(pr)
             location.append({
                 "session_key": SESSION_KEY, "driver_number": num,
                 "date": iso(T0 + timedelta(seconds=t)),
@@ -175,130 +211,113 @@ for (num, *_r) in DRIVERS:
 
     t = 0.0
     while t <= RACE_DUR:
-        prog = driver_progress(num, t)
-        if prog >= 0:
-            theta = theta_of_progress(prog)
-            lap_frac = prog % 1.0
-            spd = speed_at(theta) + random.uniform(-4, 4)
-            spd = max(60.0, spd)
-            # throttle/brake from whether accelerating (speed relative to local)
-            base = speed_at(theta)
-            throttle = 100 if spd >= base - 5 else max(0, int(spd / base * 100))
-            brake = 100 if spd < base - 25 else 0
-            gear = min(8, max(1, int(spd / 45) + 1))
-            rpm = int(6000 + (spd / 330.0) * 6000)
-            drs_on = in_drs_zone(lap_frac)
-            # OpenF1 drs is an integer code; 8/10/12/14 = enabled variants.
-            drs_code = 12 if drs_on else 1
+        pr = progress(num, t)
+        if pr >= 0:
+            frac = pr % 1.0
+            base = local_speed(frac)
+            spd = max(70.0, base + random.uniform(-5, 5))
+            throttle = 100 if spd >= base - 6 else max(0, int(spd / base * 100))
+            brake = 100 if spd < base - 28 else 0
+            gear = min(8, max(1, int(spd / 42) + 1))
             car_data.append({
                 "session_key": SESSION_KEY, "driver_number": num,
                 "date": iso(T0 + timedelta(seconds=t)),
                 "speed": round(spd), "throttle": throttle, "brake": brake,
-                "drs": drs_code, "n_gear": gear, "rpm": rpm,
+                "drs": 12 if in_drs_zone(frac) else 1,
+                "n_gear": gear, "rpm": int(6000 + (spd / 330.0) * 6200),
             })
         t += car_dt
 
-# position + intervals sampled at 1 Hz from progress
+# --- Позиции и разрывы (1 Гц) ----------------------------------------------
+position: list[dict] = []
+intervals: list[dict] = []
 t = 0.0
 while t <= RACE_DUR:
-    progs = {num: driver_progress(num, t) for (num, *_r) in DRIVERS}
+    progs = {num: progress(num, t) for (num, *_r) in DRIVERS}
     order = sorted(progs.items(), key=lambda kv: kv[1], reverse=True)
-    leader_prog = order[0][1]
-    dt_stamp = iso(T0 + timedelta(seconds=t))
-    prev_prog = None
-    for pos, (num, prog) in enumerate(order, start=1):
-        position.append({
-            "session_key": SESSION_KEY, "driver_number": num,
-            "date": dt_stamp, "position": pos,
-        })
-        # convert distance-gap (in laps) to seconds using nominal pace
-        gap_leader = (leader_prog - prog) * LAP_TIME
-        interval = 0.0 if prev_prog is None else (prev_prog - prog) * LAP_TIME
+    leader = order[0][1]
+    stamp = iso(T0 + timedelta(seconds=t))
+    prev = None
+    for pos, (num, pr) in enumerate(order, start=1):
+        position.append({"session_key": SESSION_KEY, "driver_number": num,
+                         "date": stamp, "position": pos})
         intervals.append({
-            "session_key": SESSION_KEY, "driver_number": num, "date": dt_stamp,
-            "gap_to_leader": round(gap_leader, 3),
-            "interval": round(interval, 3),
+            "session_key": SESSION_KEY, "driver_number": num, "date": stamp,
+            "gap_to_leader": round((leader - pr) * LAP_TIME, 3),
+            "interval": 0.0 if prev is None else round((prev - pr) * LAP_TIME, 3),
         })
-        prev_prog = prog
+        prev = pr
     t += 1.0
 
-# --- Laps -----------------------------------------------------------------
+# --- Круги ------------------------------------------------------------------
 laps: list[dict] = []
 for (num, *_r) in DRIVERS:
     for lap_number in range(1, LAPS + 1):
-        # time when this driver completes lap boundary
-        target = lap_number
-        # invert progress ~ linear; approximate start time of the lap
-        lap_start_t = start_offset[num] + (lap_number - 1) * LAP_TIME * pace[num]
-        dur = LAP_TIME * pace[num] + random.uniform(-1.2, 1.6)
+        # момент, когда пилот пересекает линию: progress достигает lap_number-1
+        lap_start = (lap_number - 1 + grid_frac[num]) * LAP_TIME * pace[num]
+        dur = LAP_TIME * pace[num] + random.uniform(-0.9, 1.4)
         laps.append({
             "session_key": SESSION_KEY, "driver_number": num,
             "lap_number": lap_number,
-            "date_start": iso(T0 + timedelta(seconds=lap_start_t)),
+            "date_start": iso(T0 + timedelta(seconds=lap_start)),
             "lap_duration": round(dur, 3),
             "is_pit_out_lap": False,
         })
 
-# --- Stints (one pit stop mid-race for most) ------------------------------
+# --- Стинты и пит-стопы -----------------------------------------------------
 stints: list[dict] = []
 pit: list[dict] = []
 for i, (num, *_r) in enumerate(DRIVERS):
-    pit_lap = 3 + (i % 2)  # lap 3 or 4
-    stints.append({
-        "session_key": SESSION_KEY, "driver_number": num, "stint_number": 1,
-        "compound": "SOFT" if i % 2 == 0 else "MEDIUM",
-        "lap_start": 1, "lap_end": pit_lap, "tyre_age_at_start": 0,
-    })
-    stints.append({
-        "session_key": SESSION_KEY, "driver_number": num, "stint_number": 2,
-        "compound": "HARD" if i % 2 == 0 else "MEDIUM",
-        "lap_start": pit_lap + 1, "lap_end": LAPS, "tyre_age_at_start": 0,
-    })
-    pit_t = start_offset[num] + pit_lap * LAP_TIME * pace[num]
+    pit_lap = 5 + (i % 4)
+    first, second = ("SOFT", "HARD") if i % 2 == 0 else ("MEDIUM", "HARD")
+    stints.append({"session_key": SESSION_KEY, "driver_number": num, "stint_number": 1,
+                   "compound": first, "lap_start": 1, "lap_end": pit_lap,
+                   "tyre_age_at_start": 0})
+    stints.append({"session_key": SESSION_KEY, "driver_number": num, "stint_number": 2,
+                   "compound": second, "lap_start": pit_lap + 1, "lap_end": LAPS,
+                   "tyre_age_at_start": 0})
     pit.append({
         "session_key": SESSION_KEY, "driver_number": num,
-        "date": iso(T0 + timedelta(seconds=pit_t)),
-        "pit_duration": round(random.uniform(22, 26), 1),
-        "lap_number": pit_lap,
+        "date": iso(T0 + timedelta(seconds=(pit_lap + grid_frac[num]) * LAP_TIME * pace[num])),
+        "pit_duration": round(random.uniform(21.5, 26.0), 1), "lap_number": pit_lap,
     })
 
-# --- Weather --------------------------------------------------------------
-weather: list[dict] = []
-for k in range(0, int(RACE_DUR) + 1, 60):
-    weather.append({
-        "session_key": SESSION_KEY,
-        "date": iso(T0 + timedelta(seconds=k)),
-        "air_temperature": round(24 + math.sin(k / 300) * 1.5, 1),
-        "track_temperature": round(41 + math.sin(k / 250) * 2.0, 1),
-        "humidity": round(58 + math.cos(k / 400) * 4, 1),
-        "wind_speed": round(2.5 + random.uniform(-0.5, 0.5), 1),
-        "wind_direction": int((k * 3) % 360),
-        "rainfall": 0,
-    })
+# --- Погода -----------------------------------------------------------------
+weather = [{
+    "session_key": SESSION_KEY, "date": iso(T0 + timedelta(seconds=k)),
+    "air_temperature": round(24 + math.sin(k / 300) * 1.5, 1),
+    "track_temperature": round(41 + math.sin(k / 250) * 2.0, 1),
+    "humidity": round(58 + math.cos(k / 400) * 4, 1),
+    "wind_speed": round(2.5 + random.uniform(-0.5, 0.5), 1),
+    "wind_direction": int((k * 3) % 360), "rainfall": 0,
+} for k in range(0, int(RACE_DUR) + 1, 60)]
 
-# --- Race control ---------------------------------------------------------
+# --- Race control -----------------------------------------------------------
 race_control = [
-    {"session_key": SESSION_KEY, "date": iso(T0),
-     "category": "Flag", "flag": "GREEN", "message": "GREEN LIGHT - PIT EXIT OPEN"},
-    {"session_key": SESSION_KEY, "date": iso(T0 + timedelta(seconds=LAP_TIME * 2)),
+    {"session_key": SESSION_KEY, "date": iso(T0), "category": "Flag",
+     "flag": "GREEN", "message": "GREEN LIGHT - PIT EXIT OPEN"},
+    {"session_key": SESSION_KEY, "date": iso(T0 + timedelta(seconds=LAP_TIME * 3)),
      "category": "Flag", "flag": "YELLOW", "scope": "Sector", "sector": 2,
      "message": "YELLOW IN TRACK SECTOR 2"},
-    {"session_key": SESSION_KEY, "date": iso(T0 + timedelta(seconds=LAP_TIME * 2 + 25)),
+    {"session_key": SESSION_KEY, "date": iso(T0 + timedelta(seconds=LAP_TIME * 3 + 30)),
      "category": "Flag", "flag": "CLEAR", "message": "CLEAR IN TRACK SECTOR 2"},
     {"session_key": SESSION_KEY, "date": iso(T0 + timedelta(seconds=RACE_DUR - 2)),
      "category": "Flag", "flag": "CHEQUERED", "message": "CHEQUERED FLAG"},
 ]
 
-# --- Write ----------------------------------------------------------------
+# --- Запись -----------------------------------------------------------------
 files = {
     "sessions": sessions, "meetings": meetings, "drivers": drivers,
     "location": location, "car_data": car_data, "position": position,
     "intervals": intervals, "laps": laps, "stints": stints, "pit": pit,
     "weather": weather, "race_control": race_control,
 }
+total = 0
 for name, data in files.items():
     (OUT / f"{name}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    print(f"  {name:12s} {len(data):6d} rows")
+    total += len(data)
+    print(f"  {name:12s} {len(data):7d}")
 
-print(f"\nTrack length ~ {TRACK_LEN:.0f} units, race ~ {RACE_DUR:.0f}s, "
-      f"wrote {len(files)} files to {OUT}")
+print(f"\nТрасса: {TRACK_SRC}; длина круга ~{TRACK_LEN:.0f} м")
+print(f"Пилотов: {len(DRIVERS)}, кругов: {LAPS}, длительность ~{RACE_DUR/60:.1f} мин")
+print(f"Всего записей: {total} → {OUT}")

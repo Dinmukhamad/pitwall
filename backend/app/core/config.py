@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     redis_url: str | None = Field(default=None)
     cache_ttl_s: int = 30          # live-ish data
     cache_ttl_static_s: int = 3600  # immutable replay data / geometry
+    # Окна тайминга кэшируются по «бакету» времени: ключ содержит сам интервал,
+    # поэтому данные в нём неизменны и TTL может быть щедрым (устаревание
+    # ограничено размером бакета, а не TTL).
+    frame_bucket_s: float = 1.0
+    cache_ttl_window_s: int = 300
 
     # --- Database (Postgres, optional) ------------------------------------
     # When unset the app runs without persistence (nothing is stored, but all
@@ -55,6 +60,16 @@ class Settings(BaseSettings):
     # --- Data-loading discipline (see TZ §5) ------------------------------
     location_hz: float = 3.0   # target sample rate for map coordinates
     telemetry_window_s: int = 30  # default sliding window for car_data
+
+    @property
+    def poll_interval_ms(self) -> int:
+        """Как часто фронтенду опрашивать бэкенд.
+
+        Фикстур лежит локально — можно часто. Живой OpenF1 имеет лимиты
+        бесплатного тарифа (DR-05), поэтому опрос реже, а плавность движения
+        машин на карте обеспечивается интерполяцией на клиенте.
+        """
+        return 1500 if self.data_source == "openf1" else 300
 
     @model_validator(mode="after")
     def _resolve_infra_urls(self) -> "Settings":

@@ -20,6 +20,7 @@ from app.domain.models import (
 )
 from app.cache.cache import cache
 from app.services import normalize as N
+from app.services import track_catalog
 from app.sources.factory import get_source
 
 log = get_logger("service")
@@ -116,11 +117,21 @@ class SessionService:
     async def build_frame(self, session_key: int, t: datetime) -> Frame:
         t = _ensure_aware(t)
         src = get_source()
-        window_start = t - timedelta(seconds=5)
+        # Запросы к источнику кэшируются по бакету времени (см. _windowed):
+        # десятки обращений за кадрами внутри одной секунды дают один запрос
+        # к OpenF1, и он же переиспользуется всеми зрителями (DR-05).
+        t_b = self._bucket_time(t)
+        window_start = t_b - timedelta(seconds=5)
 
-        position = await src.get_position(session_key, date_gte=window_start, date_lte=t)
-        intervals = await src.get_intervals(session_key, date_gte=window_start, date_lte=t)
-        location = await src.get_location(session_key, date_gte=window_start, date_lte=t)
+        position = await self._windowed(
+            "position", session_key, t_b,
+            lambda: src.get_position(session_key, date_gte=window_start, date_lte=t_b))
+        intervals = await self._windowed(
+            "intervals", session_key, t_b,
+            lambda: src.get_intervals(session_key, date_gte=window_start, date_lte=t_b))
+        location = await self._windowed(
+            "location", session_key, t_b,
+            lambda: src.get_location(session_key, date_gte=window_start, date_lte=t_b))
 
         drivers = {d.get("driver_number"): d for d in await self._drivers_raw(session_key)}
         laps = await self._laps(session_key)
@@ -157,8 +168,13 @@ class SessionService:
                 lap_number=cl,
                 compound=N.norm_compound(compound),
                 tyre_age=tyre_age,
-                # DRS is available within 1s of the car ahead (glossary def).
-                drs=bool(interval is not None and 0 < interval < 1.0),
+                # DRS доступен при отрыве < 1 с от впереди идущего и только
+                # начиная с 3-го круга гонки (спортивный регламент).
+                drs=bool(
+                    interval is not None
+                    and 0 < interval < 1.0
+                    and (cl or 0) >= 3
+                ),
                 in_pit=self._in_pit(pit, num, t),
                 is_fastest_lap=bool(bl and overall_fastest and abs(bl - overall_fastest) < 1e-6),
                 is_personal_best=bool(ll and bl and abs(ll - bl) < 1e-6),
@@ -185,9 +201,12 @@ class SessionService:
                               t: datetime, window_s: int | None = None) -> TelemetryWindow:
         t = _ensure_aware(t)
         window_s = window_s or settings.telemetry_window_s
-        start = t - timedelta(seconds=window_s)
-        raw = await get_source().get_car_data(
-            session_key, driver_number=driver_number, date_gte=start, date_lte=t
+        t_b = self._bucket_time(t)
+        start = t_b - timedelta(seconds=window_s)
+        raw = await self._windowed(
+            f"car:{driver_number}:{window_s}", session_key, t_b,
+            lambda: get_source().get_car_data(
+                session_key, driver_number=driver_number, date_gte=start, date_lte=t_b),
         )
         raw = [r for r in raw if N.parse_dt(r.get("date"))]
         raw.sort(key=lambda r: N.parse_dt(r.get("date")))
@@ -219,24 +238,24 @@ class SessionService:
         if cached is not None:
             return TrackGeometry(**cached)
 
-        drivers = await self._drivers_raw(session_key)
-        laps = await self._laps(session_key)
-        # pick a driver and one representative lap
-        chosen = drivers[0]["driver_number"] if drivers else None
-        pts: list[TrackPoint] = []
-        if chosen is not None:
-            dl = [l for l in laps if l.get("driver_number") == chosen and l.get("lap_duration")]
-            loc = await get_source().get_location(session_key, driver_number=chosen)
-            loc = [l for l in loc if l.get("x") is not None]
-            loc.sort(key=lambda l: N.parse_dt(l.get("date")) or datetime.min.replace(tzinfo=timezone.utc))
-            if dl and loc:
-                start = N.parse_dt(dl[0].get("date_start")) or N.parse_dt(loc[0].get("date"))
-                end = start + timedelta(seconds=dl[0]["lap_duration"] * 1.02)
-                loc = [l for l in loc if start <= (N.parse_dt(l.get("date")) or start) <= end] or loc
-            raw_pts = [(float(l["x"]), float(l["y"])) for l in loc]
-            raw_pts = self._smooth(raw_pts)               # R-05 smoothing
-            raw_pts = self._downsample_xy(raw_pts, cap=240)
-            pts = [TrackPoint(x=x, y=y) for x, y in raw_pts]
+        pts = await self._track_from_location(session_key)
+        source_used = "location"
+
+        # Запасной вариант (ТЗ §2.3 способ 2, R-05): реальный контур из каталога.
+        if len(pts) < 30:
+            info = await self.get_session_info(session_key)
+            hit = track_catalog.find(
+                info.circuit if info else None,
+                info.country if info else None,
+            )
+            if hit:
+                raw = self._downsample_xy([(p[0], p[1]) for p in hit["points"]], cap=300)
+                pts = [TrackPoint(x=x, y=y) for x, y in raw]
+                source_used = f"catalog:{hit['id']}"
+                log.info("Геометрия трассы из каталога: %s (%s)", hit["name"], hit["location"])
+
+        if not pts:
+            log.warning("Геометрия трассы недоступна для session_key=%s", session_key)
 
         xs = [p.x for p in pts] or [0]
         ys = [p.y for p in pts] or [0]
@@ -246,7 +265,53 @@ class SessionService:
             bounds={"minx": min(xs), "maxx": max(xs), "miny": min(ys), "maxy": max(ys)},
         )
         await cache.set_json(key, geom.model_dump(), ttl=settings.cache_ttl_static_s)
+        log.info("Геометрия трассы session=%s: %d точек, источник=%s",
+                 session_key, len(pts), source_used)
         return geom
+
+    async def _track_from_location(self, session_key: int) -> list[TrackPoint]:
+        """Контур трассы трассировкой `/location` за ОДИН круг (ТЗ §2.3 способ 1).
+
+        Критично: запрос ограничен окном одного круга. Без окна OpenF1 отдал бы
+        всю сессию — на двухчасовой гонке это ~26 000 точек на пилота (единицы
+        мегабайт), что упирается в таймаут и лимиты бесплатного тарифа.
+        """
+        drivers = await self._drivers_raw(session_key)
+        laps = await self._laps(session_key)
+        if not drivers:
+            return []
+
+        # Берём пилота с самым чистым (быстрым) полным кругом — меньше шума от
+        # пит-лейна и медленных кругов под жёлтыми флагами.
+        candidates = [
+            l for l in laps
+            if l.get("lap_duration") and l.get("date_start") and not l.get("is_pit_out_lap")
+        ]
+        if not candidates:
+            return []
+        best = min(candidates, key=lambda l: l["lap_duration"])
+        start = N.parse_dt(best["date_start"])
+        if start is None:
+            return []
+        end = start + timedelta(seconds=float(best["lap_duration"]) * 1.03)
+
+        loc = await get_source().get_location(
+            session_key,
+            driver_number=best.get("driver_number"),
+            date_gte=start,
+            date_lte=end,
+        )
+        loc = [l for l in loc if l.get("x") is not None and l.get("y") is not None]
+        # OpenF1 иногда отдаёт нулевые координаты при потере сигнала — отбрасываем.
+        loc = [l for l in loc if not (float(l["x"]) == 0 and float(l["y"]) == 0)]
+        if len(loc) < 30:
+            return []
+        loc.sort(key=lambda l: N.parse_dt(l.get("date")) or start)
+
+        raw_pts = [(float(l["x"]), float(l["y"])) for l in loc]
+        raw_pts = self._smooth(raw_pts)                 # сглаживание шума (R-05)
+        raw_pts = self._downsample_xy(raw_pts, cap=300)
+        return [TrackPoint(x=x, y=y) for x, y in raw_pts]
 
     # ---- tyres -----------------------------------------------------------
     async def build_tyres(self, session_key: int) -> list[DriverStints]:
@@ -268,6 +333,27 @@ class SessionService:
         return out
 
     # ================= internal helpers ==================================
+    def _bucket_time(self, t: datetime) -> datetime:
+        """Округлить момент времени вниз до размера бакета."""
+        b = settings.frame_bucket_s
+        if b <= 0:
+            return t
+        ts = (t.timestamp() // b) * b
+        return datetime.fromtimestamp(ts, tz=t.tzinfo or timezone.utc)
+
+    async def _windowed(self, name: str, session_key: int, t_b: datetime, fetch):
+        """Кэш оконного запроса к источнику.
+
+        Ключ включает сам временной бакет, поэтому содержимое неизменно —
+        длинный TTL безопасен, а свежесть ограничена размером бакета.
+        """
+        key = f"w:{name}:{session_key}:{int(t_b.timestamp() * 1000)}"
+        cached = await cache.get_json(key)
+        if cached is None:
+            cached = await fetch()
+            await cache.set_json(key, cached, ttl=settings.cache_ttl_window_s)
+        return cached
+
     def _lap_stats(self, laps: list[dict], t: datetime):
         completed: dict[int, int] = {}
         current_lap: dict[int, int] = {}

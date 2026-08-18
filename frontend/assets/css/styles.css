@@ -129,7 +129,9 @@ b { font-weight: 700; }
 .c-lap { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
 .c-ind { display: flex; gap: 4px; justify-content: flex-end; }
 .ind { font-size: 9px; font-weight: 800; padding: 2px 4px; border-radius: 4px; letter-spacing: .5px; }
-.ind.drs { background: #113; color: #4de; border: 1px solid #276; }
+/* Неактивный DRS почти не виден — иначе таблица читается так, будто он
+   доступен всем; активный подсвечивается зелёным. */
+.ind.drs { background: transparent; color: #3c4557; border: 1px solid #29313f; }
 .ind.drs.on { background: var(--green); color: #032; border-color: var(--green); }
 .ind.pit { background: #3a2a00; color: var(--yellow); border: 1px solid #6a4d00; }
 

@@ -15,6 +15,12 @@ export const S = {
   totalLaps: null,
   latestTiming: [],     // last frame's timing rows
   latestPositions: [],  // last frame's car positions
+
+  // Темп опроса задаёт сервер (лимиты OpenF1 на живых данных).
+  pollIntervalMs: 300,
+  // Сглаживание движения машин: между редкими ответами сервера точки
+  // доезжают к новым координатам, а не прыгают.
+  renderPos: {},        // number -> {x, y}
 };
 
 export function teamColor(num) {

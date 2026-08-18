@@ -7,3 +7,9 @@ venv/
 .pytest_cache/
 node_modules/
 .DS_Store
+
+# Артефакты сборки — создаются скриптами, в репозитории не хранятся:
+#   python scripts/fetch_circuits.py    -> каталог контуров трасс (сторонние данные)
+#   python scripts/generate_fixture.py  -> демо-сессия (~10 МБ)
+backend/app/data/circuits.json
+backend/app/sources/fixtures/

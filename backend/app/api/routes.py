@@ -23,11 +23,16 @@ router = APIRouter(prefix="/api")
 async def health() -> dict:
     from app.cache.cache import cache
     from app.db.database import db
+    from app.services import track_catalog
     return {
         "status": "ok",
         "data_source": settings.data_source,
         "cache_backend": cache.backend,
         "db_enabled": db.enabled,
+        "track_catalog": track_catalog.available(),
+        # Сервер сам диктует клиенту темп опроса — так лимиты OpenF1
+        # соблюдаются независимо от того, сколько открыто вкладок.
+        "poll_interval_ms": settings.poll_interval_ms,
     }
 
 
