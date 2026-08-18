@@ -43,8 +43,8 @@ function renderError(msg) {
 function ring(pct, big, sub) {
   const r = 42, c = 2 * Math.PI * r, off = c * (1 - pct);
   return `<svg viewBox="0 0 100 100" class="ring">
-    <circle cx="50" cy="50" r="${r}" fill="none" stroke="#263042" stroke-width="8"/>
-    <circle cx="50" cy="50" r="${r}" fill="none" stroke="#37e0c8" stroke-width="8" stroke-linecap="round"
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="#1A2029" stroke-width="8"/>
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="#2FD47A" stroke-width="8" stroke-linecap="round"
       stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 50 50)"/>
     <text x="50" y="48" text-anchor="middle" class="ringbig">${esc(big)}</text>
     <text x="50" y="64" text-anchor="middle" class="ringsub">${esc(sub)}</text></svg>`;
@@ -62,13 +62,13 @@ function donut(segs) {
     acc += len;
   }
   return `<svg viewBox="0 0 100 100" class="donut">
-    <circle cx="50" cy="50" r="${r}" fill="none" stroke="#1b2231" stroke-width="13"/>${arcs}</svg>`;
+    <circle cx="50" cy="50" r="${r}" fill="none" stroke="#1A2029" stroke-width="13"/>${arcs}</svg>`;
 }
 
 function bars(rows, label) {
   if (!rows.length) return `<div class="state">Нет данных</div>`;
   const max = Math.max(...rows.map((r) => r.points), 1);
-  return `<div class="bars">` + rows.map((r) => `
+  return `<div style="padding:12px 18px 18px">` + rows.map((r) => `
     <div class="barrow">
       <div class="bpos">${r.position}</div>
       <div class="bname"><b>${esc(label(r).main)}</b><span>${esc(label(r).sub)}</span></div>
@@ -96,14 +96,14 @@ function render(d) {
   const drvTile = dLead ? `<div class="kpi"><div>
       <div class="kl">лидер · личный зачёт</div>
       <div class="kv">${esc(dLead.code)}</div>
-      <div class="ks"><b style="color:var(--text)">${dLead.points}</b> очк.${
+      <div class="ks"><b style="color:var(--txt)">${dLead.points}</b> очк.${
         dSec ? ` · отрыв +${(dLead.points - dSec.points).toFixed(0)} от ${esc(dSec.code)}` : ""}</div>
     </div></div>` : "";
 
   const conTile = cLead ? `<div class="kpi"><div>
       <div class="kl">лидер · конструкторы</div>
       <div class="kv" style="font-size:19px">${esc(cLead.name)}</div>
-      <div class="ks"><b style="color:var(--text)">${cLead.points}</b> очк.${
+      <div class="ks"><b style="color:var(--txt)">${cLead.points}</b> очк.${
         cSec ? ` · отрыв +${(cLead.points - cSec.points).toFixed(0)}` : ""}</div>
     </div></div>` : "";
 
@@ -114,7 +114,7 @@ function render(d) {
 
   const marks = d.calendar.map((r) => {
     const x = d.calendar.length > 1 ? ((r.round - 1) / (d.calendar.length - 1)) * 100 : 0;
-    const col = r.is_next ? "#37e0c8" : r.is_past ? "#2ee06a" : "#4a556b";
+    const col = r.is_next ? "#FF2E3F" : r.is_past ? "#2FD47A" : "#5C6673";
     return `<div class="tlmark" style="left:${x}%;background:${col}"></div>`;
   }).join("");
 
@@ -137,16 +137,16 @@ function render(d) {
     </div>
 
     <div class="kpis">
-      <div class="kpi">${ring(pct, `${d.races_done}/${d.races_total}`, "этапов")}
+      <div class="kpi ring-kpi">${ring(pct, `${d.races_done}/${d.races_total}`, "этапов")}
         <div><div class="kl">прогресс сезона</div><div class="kv">${Math.round(pct * 100)}%</div>
         <div class="ks">осталось ${d.races_total - d.races_done}</div></div></div>
       ${drvTile}${conTile}${nextTile}
     </div>
 
-    <div class="card"><h2>Личный зачёт · очки</h2>
+    <div class="card" style="margin-bottom:16px"><h2>Личный зачёт · очки</h2>
       ${bars(d.drivers, (r) => ({ main: r.code, sub: r.team_name ?? "" }))}</div>
 
-    <div class="two-col">
+    <div class="scols">
       <div class="card"><h2>Кубок конструкторов · очки</h2>
         ${bars(d.constructors, (r) => ({ main: r.name, sub: "" }))}</div>
       <div class="card"><h2>Доля очков по командам</h2>
@@ -155,7 +155,7 @@ function render(d) {
 
     <div class="card"><h2>Календарь ${esc(d.season)} · ${d.races_total} этапов</h2>
       <div class="tl"><div class="tlbar"><div class="tlfill" style="width:${pct * 100}%"></div>${marks}</div></div>
-      <div class="cal">${chips}</div></div>`;
+      <div class="chips-cal">${chips}</div></div>`;
 
   document.getElementById("season-refresh").onclick = () => loadSeason(true);
 }

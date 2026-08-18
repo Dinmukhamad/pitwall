@@ -14,24 +14,26 @@ const mapsWrap = document.getElementById("maps-wrap");
 const TELE_WINDOW = 30;
 let busy = false;
 
-// ---------- Header ----------
+// ---------- Шапка ----------
 const H = {
-  flagChip: document.getElementById("flag-chip"),
-  flagLabel: document.getElementById("flag-label"),
+  flag: document.getElementById("flag"),
   lapCur: document.getElementById("lap-current"),
   lapTot: document.getElementById("lap-total"),
-  air: document.getElementById("w-air"), track: document.getElementById("w-track"),
-  hum: document.getElementById("w-hum"), wind: document.getElementById("w-wind"),
-  conn: document.getElementById("conn-status"), connLabel: document.getElementById("conn-label"),
+  weather: document.getElementById("weather"),
+  conn: document.getElementById("conn-status"),
+  connLabel: document.getElementById("conn-label"),
   clock: document.getElementById("clock"),
+  mapsCount: document.getElementById("maps-count"),
 };
-const FLAG_LABEL = {
-  GREEN: "Зелёный", YELLOW: "Жёлтый", DOUBLE_YELLOW: "2×Жёлтый",
-  SC: "Safety Car", VSC: "Вирт. SC", RED: "Красный", CHEQUERED: "Финиш", UNKNOWN: "—",
+// Флаг показываем короткой меткой, как в макете: GREEN / SC / RED …
+const FLAG = {
+  GREEN: ["GREEN", ""], YELLOW: ["YELLOW", "yellow"], DOUBLE_YELLOW: ["2× YELLOW", "yellow"],
+  SC: ["SAFETY CAR", "sc"], VSC: ["VSC", "vsc"], RED: ["RED", "red"],
+  CHEQUERED: ["FINISH", "chequered"], UNKNOWN: ["—", ""],
 };
 
 function setConn(state, label) {
-  H.conn.className = "conn " + state;
+  H.conn.className = "demo-badge" + (state === "ok" ? "" : state === "err" ? " err" : "");
   H.connLabel.textContent = label;
 }
 
@@ -92,7 +94,7 @@ function removeMap(m) {
   updateMapsCount();
 }
 function updateMapsCount() {
-  document.getElementById("maps-count").textContent = `${maps.length} / 3`;
+  H.mapsCount.textContent = `${maps.length} / 3`;
   document.getElementById("add-map").disabled = maps.length >= 3;
 }
 
@@ -110,16 +112,18 @@ async function refresh() {
     S.latestTiming = frame.timing || [];
     S.latestPositions = frame.positions || [];
 
-    // header
-    H.flagChip.dataset.flag = frame.flag;
-    H.flagLabel.textContent = FLAG_LABEL[frame.flag] || frame.flag;
+    // Шапка: флаг, круг, погода (FR-50, FR-51)
+    const [flagText, flagCls] = FLAG[frame.flag] || FLAG.UNKNOWN;
+    H.flag.textContent = flagText;
+    H.flag.className = "flag race-only " + flagCls;
     H.lapCur.textContent = frame.lap ?? "–";
     if (frame.total_laps) H.lapTot.textContent = frame.total_laps;
+
     const w = frame.weather || {};
-    H.air.textContent = w.air_temperature ?? "–";
-    H.track.textContent = w.track_temperature ?? "–";
-    H.hum.textContent = w.humidity ?? "–";
-    H.wind.textContent = w.wind_speed ?? "–";
+    H.weather.textContent = w.air_temperature != null
+      ? `возд ${w.air_temperature}° · трасса ${w.track_temperature ?? "–"}° · ` +
+        `влажн ${w.humidity ?? "–"}% · ветер ${w.wind_speed ?? "–"} м/с`
+      : "";
 
     renderTower(selectDriver);
     renderTyres();
@@ -131,8 +135,7 @@ async function refresh() {
       renderTelemetry(tm);
     }
 
-    setConn(S.latestPositions.length ? "ok" : "stale",
-      S.latestPositions.length ? "данные ок" : "данные задерживаются");
+    if (!S.latestPositions.length) setConn("stale", "данные задерживаются");
   } catch (e) {
     console.error(e);
     setConn("err", "нет связи");
@@ -235,19 +238,19 @@ function wireControls() {
     S.syncOffset = +e.target.value || 0; refresh();
   };
 
+  // Переключение режима разрыва (FR-03): активный режим выделен жирным
   const gapBtn = document.getElementById("gap-toggle");
+  const paintGap = () => {
+    gapBtn.innerHTML = S.gapMode === "interval"
+      ? `<b style="color:var(--muted)">интервал</b> ▸ к лидеру`
+      : `интервал ▸ <b style="color:var(--muted)">к лидеру</b>`;
+  };
+  paintGap();
   gapBtn.onclick = () => {
     S.gapMode = S.gapMode === "interval" ? "leader" : "interval";
-    document.getElementById("gap-mode").textContent =
-      S.gapMode === "interval" ? "интервал" : "от лидера";
-    document.getElementById("gap-col-label").textContent =
-      S.gapMode === "interval" ? "Инт." : "Лидер";
+    paintGap();
     renderTower(selectDriver);
   };
-
-  // mode switch (Live requires openf1 source — informational for now)
-  document.getElementById("mode-replay").onclick = () => setMode("replay");
-  document.getElementById("mode-live").onclick = () => setMode("live");
 
   wireViews();
 }
@@ -282,24 +285,20 @@ function wireViews() {
   document.body.classList.add("on-race");
 }
 
-function setMode(mode) {
-  document.getElementById("mode-replay").classList.toggle("active", mode === "replay");
-  document.getElementById("mode-live").classList.toggle("active", mode === "live");
-  if (mode === "live") {
-    // Live continuously advances toward "now"; here we just keep polling head.
-    setConn("stale", "Live: нужен источник openf1");
-  }
-}
-
 // ---------- Init ----------
 async function init() {
   wireControls();
   try {
     const h = await api.health();
     S.pollIntervalMs = h.poll_interval_ms || 300;
-    const mode = h.data_source === "openf1" ? "OpenF1" : "демо";
-    setConn("ok", `${mode} · ${h.cache_backend}`);
-  } catch { setConn("err", "backend недоступен"); }
+    // Бейдж честно говорит, что на экране: имитация или живые данные.
+    if (h.data_source === "openf1") {
+      H.conn.className = "demo-badge live";
+      H.connLabel.textContent = "openf1 · live";
+    } else {
+      setConn("ok", "demo · симуляция");
+    }
+  } catch { setConn("err", "нет связи с бэкендом"); }
   await loadSessions();
   updateClock();
   requestAnimationFrame(animate);

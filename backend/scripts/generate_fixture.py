@@ -268,7 +268,9 @@ for (num, *_r) in DRIVERS:
 stints: list[dict] = []
 pit: list[dict] = []
 for i, (num, *_r) in enumerate(DRIVERS):
-    pit_lap = 5 + (i % 4)
+    # Пит-стоп в середине гонки: на последних кругах не питуются, иначе
+    # второй стинт вырождается в пустой отрезок.
+    pit_lap = 3 + (i % 4)
     first, second = ("SOFT", "HARD") if i % 2 == 0 else ("MEDIUM", "HARD")
     stints.append({"session_key": SESSION_KEY, "driver_number": num, "stint_number": 1,
                    "compound": first, "lap_start": 1, "lap_end": pit_lap,
