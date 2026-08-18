@@ -27,44 +27,56 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 SESSION_KEY = 9999
 MEETING_KEY = 1999
-YEAR = 2024
-T0 = datetime(2024, 5, 26, 13, 0, 0, tzinfo=timezone.utc)
+YEAR = 2026
+T0 = datetime(2026, 7, 26, 13, 0, 0, tzinfo=timezone.utc)
 
 # Трасса демо-сессии (ищется в каталоге по этому ключу).
-CIRCUIT_ID = "mc-1929"
-CIRCUIT_LOCATION = "Monaco"
-CIRCUIT_COUNTRY = "Monaco"
-CIRCUIT_NAME = "Circuit de Monaco"
+CIRCUIT_ID = "hu-1986"
+CIRCUIT_LOCATION = "Budapest"
+CIRCUIT_COUNTRY = "Hungary"
+CIRCUIT_NAME = "Hungaroring"
 
 LAPS = 8
-LAP_TIME = 74.0            # опорное время круга, с
+LAP_TIME = 80.0            # опорное время круга, с
 # Частоты подобраны под демо: карта плавная за счёт интерполяции на клиенте,
 # а объём данных остаётся приемлемым по памяти на бесплатном хостинге.
 LOC_HZ = 2.0               # частота выборки координат
 CAR_HZ = 2.0               # частота выборки телеметрии
 
-# --- Реальный грид сезона-2024: номер, акроним, имя, команда, цвет (OpenF1) ---
+# --- Грид сезона-2026: номер, акроним, имя, команда, цвет (формат OpenF1) ---
+# 11 команд, 22 машины. Норрис под первым номером как действующий чемпион,
+# Ferrari с парой Леклер/Хэмилтон, Audi и Cadillac — дебютанты сезона.
+#
+# Порядок в списке = стартовая решётка демо-заезда. Это ИМИТАЦИЯ, а не
+# результат реальной гонки (см. шапку файла), поэтому порядок задан
+# правдоподобным, а не взят из протокола.
+#
+# Цвета: в живом режиме team_colour приходит прямо из OpenF1, здесь они нужны
+# только для демо и для раздела «Сезон». У Audi и Cadillac взяты фирменные
+# цвета марок — сверить с ливреями стоит по /drivers из OpenF1.
 DRIVERS = [
-    (1,  "VER", "Max Verstappen",     "Red Bull Racing", "3671C6"),
-    (11, "PER", "Sergio Perez",       "Red Bull Racing", "3671C6"),
-    (16, "LEC", "Charles Leclerc",    "Ferrari",         "E8002D"),
-    (55, "SAI", "Carlos Sainz",       "Ferrari",         "E8002D"),
-    (4,  "NOR", "Lando Norris",       "McLaren",         "FF8000"),
+    (1,  "NOR", "Lando Norris",       "McLaren",         "FF8000"),
     (81, "PIA", "Oscar Piastri",      "McLaren",         "FF8000"),
-    (44, "HAM", "Lewis Hamilton",     "Mercedes",        "27F4D2"),
+    (3,  "VER", "Max Verstappen",     "Red Bull Racing", "3671C6"),
+    (6,  "HAD", "Isack Hadjar",       "Red Bull Racing", "3671C6"),
+    (16, "LEC", "Charles Leclerc",    "Ferrari",         "E8002D"),
+    (44, "HAM", "Lewis Hamilton",     "Ferrari",         "E8002D"),
     (63, "RUS", "George Russell",     "Mercedes",        "27F4D2"),
+    (12, "ANT", "Kimi Antonelli",     "Mercedes",        "27F4D2"),
+    (55, "SAI", "Carlos Sainz",       "Williams",        "64C4FF"),
+    (23, "ALB", "Alexander Albon",    "Williams",        "64C4FF"),
+    (30, "LAW", "Liam Lawson",        "Racing Bulls",    "6692FF"),
+    (41, "LIN", "Arvid Lindblad",     "Racing Bulls",    "6692FF"),
     (14, "ALO", "Fernando Alonso",    "Aston Martin",    "229971"),
     (18, "STR", "Lance Stroll",       "Aston Martin",    "229971"),
+    (27, "HUL", "Nico Hulkenberg",    "Audi",            "BB0A30"),
+    (5,  "BOR", "Gabriel Bortoleto",  "Audi",            "BB0A30"),
     (10, "GAS", "Pierre Gasly",       "Alpine",          "0093CC"),
-    (31, "OCO", "Esteban Ocon",       "Alpine",          "0093CC"),
-    (23, "ALB", "Alexander Albon",    "Williams",        "64C4FF"),
-    (2,  "SAR", "Logan Sargeant",     "Williams",        "64C4FF"),
-    (22, "TSU", "Yuki Tsunoda",       "RB",              "6692FF"),
-    (3,  "RIC", "Daniel Ricciardo",   "RB",              "6692FF"),
-    (77, "BOT", "Valtteri Bottas",    "Kick Sauber",     "52E252"),
-    (24, "ZHO", "Zhou Guanyu",        "Kick Sauber",     "52E252"),
-    (27, "HUL", "Nico Hulkenberg",    "Haas F1 Team",    "B6BABD"),
-    (20, "MAG", "Kevin Magnussen",    "Haas F1 Team",    "B6BABD"),
+    (43, "COL", "Franco Colapinto",   "Alpine",          "0093CC"),
+    (31, "OCO", "Esteban Ocon",       "Haas F1 Team",    "B6BABD"),
+    (87, "BEA", "Oliver Bearman",     "Haas F1 Team",    "B6BABD"),
+    (11, "PER", "Sergio Perez",       "Cadillac",        "C9A24B"),
+    (77, "BOT", "Valtteri Bottas",    "Cadillac",        "C9A24B"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -179,7 +191,7 @@ sessions = [{
 }]
 
 meetings = [{
-    "meeting_key": MEETING_KEY, "meeting_name": "Monaco Grand Prix (демо)",
+    "meeting_key": MEETING_KEY, "meeting_name": "Hungarian Grand Prix (демо)",
     "meeting_official_name": "Pit Wall demo session — имитация, не реальная гонка",
     "country_name": CIRCUIT_COUNTRY, "location": CIRCUIT_LOCATION,
     "year": YEAR, "date_start": iso(T0),
