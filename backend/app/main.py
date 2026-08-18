@@ -68,6 +68,25 @@ def create_app() -> FastAPI:
         allow_methods=["GET"],
         allow_headers=["*"],
     )
+    @app.middleware("http")
+    async def cache_headers(request, call_next):
+        """Запретить кэширование данных тайминга.
+
+        Без этого браузер отдаёт из кэша ответы с постоянным URL (`/drivers`,
+        `/track`, `/tyres`, `/bounds`), тогда как `/frame?offset=…` каждый раз
+        новый — и экран показывает смесь старых и свежих данных. Для тайминга
+        устаревшие данные хуже отсутствующих, поэтому no-store.
+        """
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+        elif path == "/" or path.startswith("/assets/"):
+            # Статика может кэшироваться, но обязана сверяться с сервером,
+            # иначе после деплоя у пользователя остаётся старый интерфейс.
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     app.include_router(api_router)
     app.include_router(news_router)
 

@@ -107,6 +107,22 @@ def test_tyres():
         assert all(t["stints"] for t in tyres)
 
 
+def test_api_responses_are_not_cacheable():
+    """Данные тайминга не должны кэшироваться браузером.
+
+    Регресс, который это ловит: после деплоя экран показывает смесь старых
+    (постоянный URL, отдан из кэша) и новых (`/frame?offset=…`) данных.
+    """
+    with TestClient(app) as c:
+        for url in (f"/api/sessions/{SK}/drivers", f"/api/sessions/{SK}/track",
+                    f"/api/sessions/{SK}/tyres", "/api/health"):
+            cc = c.get(url).headers.get("cache-control", "")
+            assert "no-store" in cc, f"{url} кэшируется: {cc!r}"
+
+        # Статика обязана сверяться с сервером, иначе остаётся старый интерфейс.
+        assert "no-cache" in c.get("/").headers.get("cache-control", "")
+
+
 def test_news_skeleton():
     with TestClient(app) as c:
         assert c.get("/api/news/sources").json()
