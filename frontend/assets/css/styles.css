@@ -295,3 +295,34 @@
   /* Доступность (NFR-03): видимый фокус клавиатуры */
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+  /* ---------- ЧИТАЛКА (материал открывается на сайте) ---------- */
+  .reader{position:fixed;inset:0;z-index:100;background:rgba(6,8,12,.78);
+    backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;
+    padding:40px 20px;overflow-y:auto}
+  .reader.hidden{display:none}
+  #reader-body{background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius);box-shadow:0 24px 60px rgba(0,0,0,.55);
+    max-width:760px;width:100%;padding:22px 28px 26px;margin:auto}
+  .reader-top{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .reader-top .ntime{margin-left:0}
+  .reader-top .mbtn{margin-left:auto}
+  #reader-body h1{font-size:26px;font-weight:800;letter-spacing:-.4px;line-height:1.25;margin:0 0 16px}
+  .reader-img{width:100%;border-radius:12px;margin-bottom:18px;display:block}
+  .reader-text p{font-size:15.5px;line-height:1.75;color:#DCE2EA;margin:0 0 14px}
+  .reader-note{background:rgba(245,208,0,.09);border:1px solid rgba(245,208,0,.28);
+    color:#F5D000;border-radius:10px;padding:10px 14px;font-size:12.5px;line-height:1.6;margin:16px 0}
+  .reader-src{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;
+    color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+  .reader-src:hover{border-bottom-color:var(--accent)}
+
+  /* Карточка новости — теперь кнопка, а не ссылка */
+  button.ncard{font-family:var(--sans);text-align:left;padding:0;cursor:pointer;
+    background:var(--surface);border:1px solid var(--border-soft)}
+  button.ncard:hover{border-color:#333d4c;background:var(--surface)}
+
+  @media (max-width:640px){
+    .reader{padding:0}
+    #reader-body{border-radius:0;border:0;min-height:100%;padding:18px 18px 24px}
+    #reader-body h1{font-size:21px}
+  }

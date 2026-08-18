@@ -22,6 +22,11 @@ class Article(BaseModel):
     title: str
     url: str
     excerpt: str | None = None
+    # Текст, который издание САМО синдицировало в RSS (content:encoded или
+    # description). Показывается во встроенной читалке. Страница издания при
+    # этом не скачивается: републикация чужой статьи запрещена (ТЗ L-01).
+    body: list[str] = []          # абзацы, уже очищенные от HTML
+    full_text: bool = False       # True, если лента отдала статью, а не анонс
     image_url: str | None = None
     published_at: datetime | None = None
     lang: str = "ru"

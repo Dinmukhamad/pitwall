@@ -121,3 +121,49 @@ def test_strip_html():
 def test_broken_feed_yields_nothing_but_does_not_raise():
     assert parse_feed("не xml вовсе", SRC) == []
     assert parse_feed("", SRC) == []
+
+
+# --- Встроенная читалка: текст, который издание само отдало в ленте ---------
+
+RSS_FULL = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+  <item>
+    <title>Большое интервью с гонщиком</title>
+    <link>https://example.com/long</link>
+    <description>Короткий анонс материала.</description>
+    <content:encoded><![CDATA[
+      <p>Первый абзац рассказывает о подготовке команды к этапу и о том,
+         какие изменения были внесены в аэродинамический пакет машины.</p>
+      <p>Второй абзац посвящён квалификации: пилот отметил, что баланс
+         машины улучшился после доработок в задней части.</p>
+      <p>Третий абзац о стратегии на гонку и о выборе стартового комплекта
+         шин, который команда держала в секрете до последнего момента.</p>
+      <p>Короткий</p>
+      <p>Читать далее</p>
+    ]]></content:encoded>
+    <pubDate>Mon, 27 May 2024 08:00:00 +0000</pubDate>
+  </item>
+</channel></rss>"""
+
+
+def test_full_text_taken_from_content_encoded():
+    """Если издание синдицировало статью — читалка получает её целиком."""
+    art = parse_feed(RSS_FULL, SRC)[0]
+    assert art.full_text is True
+    assert len(art.body) == 3                      # короткий и служебный отброшены
+    assert "аэродинамический пакет" in art.body[0]
+    assert all("<" not in p for p in art.body)     # разметки в тексте нет
+    assert not any("Читать далее" in p for p in art.body)
+
+
+def test_short_announcement_is_not_marked_as_full_text():
+    """Когда в ленте только анонс — честно помечаем, что это не статья."""
+    art = parse_feed(RSS, SRC)[0]
+    assert art.full_text is False
+
+
+def test_body_has_no_html_entities():
+    art = parse_feed(RSS, SRC)[0]
+    joined = " ".join(art.body)
+    assert "&lt;" not in joined and "&amp;" not in joined

@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import re
 from datetime import datetime, timezone
+from html import unescape
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import feedparser
@@ -48,7 +49,65 @@ def canonical_url(url: str) -> str:
 def strip_html(value: str | None) -> str:
     if not value:
         return ""
-    return WS_RE.sub(" ", TAG_RE.sub(" ", value)).strip()
+    return WS_RE.sub(" ", TAG_RE.sub(" ", unescape(value))).strip()
+
+
+# Границы абзацев: закрывающий </p>, <br>, </div>, заголовки.
+PARA_SPLIT_RE = re.compile(r"(?:</p\s*>|<br\s*/?>|</div\s*>|</h[1-6]\s*>)", re.I)
+# Служебные хвосты RSS: «Читать далее», ссылки на источник и т.п.
+TAIL_RE = re.compile(r"^(читать (далее|полностью)|подробнее|источник|read more)\b", re.I)
+
+
+def to_paragraphs(html: str | None, min_len: int = 25) -> list[str]:
+    """HTML из ленты -> список абзацев чистого текста.
+
+    Теги вырезаются полностью, а не «санируются»: во встроенную читалку
+    попадает только текст, поэтому чужой разметке и скриптам взяться неоткуда
+    (XSS исключён по построению).
+    """
+    if not html:
+        return []
+    parts = PARA_SPLIT_RE.split(html)
+    out: list[str] = []
+    for part in parts:
+        text = strip_html(part)
+        if len(text) < min_len or TAIL_RE.match(text):
+            continue
+        if text not in out:            # ленты часто дублируют лид в теле
+            out.append(text)
+    return out
+
+
+def pick_body(entry) -> tuple[list[str], bool]:
+    """Достать самый полный текст, который отдала лента.
+
+    `content:encoded` (feedparser кладёт в ``entry.content``) — это полный
+    текст, который издание намеренно синдицировало. Если его нет, остаётся
+    анонс из ``summary``.
+    """
+    candidates: list[str] = []
+    for item in getattr(entry, "content", []) or []:
+        value = item.get("value") if isinstance(item, dict) else getattr(item, "value", None)
+        if value:
+            candidates.append(value)
+    summary = getattr(entry, "summary", "") or ""
+    if summary:
+        candidates.append(summary)
+    if not candidates:
+        return [], False
+
+    richest = max(candidates, key=len)
+    paragraphs = to_paragraphs(richest)
+    if not paragraphs:
+        return [], False
+
+    # Признак статьи, а не анонса: несколько абзацев И заметно больше текста,
+    # чем в кратком описании. Одного порога по длине мало — короткая заметка
+    # в три абзаца это всё-таки статья, а длинный лид — всё ещё анонс.
+    total = sum(len(p) for p in paragraphs)
+    summary_len = len(strip_html(summary))
+    is_full = len(paragraphs) >= 2 and total >= max(240, int(summary_len * 1.5))
+    return paragraphs, is_full
 
 
 def normalize_title(value: str) -> str:
@@ -105,7 +164,8 @@ def parse_feed(raw: bytes | str, source: NewsSource) -> list[Article]:
                 if title.endswith(suffix):
                     title = title[: -len(suffix)].strip()
 
-        excerpt = strip_html(getattr(entry, "summary", "") or "")
+        body, full_text = pick_body(entry)
+        excerpt = strip_html(getattr(entry, "summary", "") or "") or (body[0] if body else "")
         items.append(Article(
             id=hashlib.sha1(url.encode()).hexdigest()[:16],
             source=display_source,
@@ -113,6 +173,8 @@ def parse_feed(raw: bytes | str, source: NewsSource) -> list[Article]:
             title=title,
             url=url,
             excerpt=excerpt[:400] or None,
+            body=body,
+            full_text=full_text,
             image_url=_extract_image(entry),
             published_at=_parse_date(entry),
             lang=source.lang,

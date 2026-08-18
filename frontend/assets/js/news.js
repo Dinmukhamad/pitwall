@@ -64,11 +64,12 @@ function render() {
   const colourOf = (a) =>
     "#" + (feed.sources.find((s) => s.id === a.source_id)?.colour || "8A9099");
 
+  // Карточка — кнопка, а не ссылка: материал открывается здесь же, на сайте.
   const cards = items.map((a) => {
     const col = colourOf(a);
     const thumb = a.image_url
       ? `<div class="thumb" style="background-image:url('${esc(a.image_url).replace(/'/g, "%27")}')"></div>` : "";
-    return `<a class="ncard" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">
+    return `<button class="ncard" data-id="${esc(a.id)}">
       ${thumb}
       <div class="nbody">
         <div class="ntop">
@@ -77,7 +78,7 @@ function render() {
         </div>
         <div class="ntitle">${esc(a.title)}</div>
         ${a.excerpt ? `<div class="nexcerpt">${esc(a.excerpt)}</div>` : ""}
-      </div></a>`;
+      </div></button>`;
   }).join("") || `<div class="state">Нет новостей по выбранным источникам</div>`;
 
   // Не делаем вид, что это всё: неответившие ленты называем явно.
@@ -106,4 +107,54 @@ function render() {
       render();
     };
   });
+  body.querySelectorAll(".ncard[data-id]").forEach((c) => {
+    c.onclick = () => openArticle(c.dataset.id);
+  });
 }
+
+// ---------- Читалка ----------
+// Материал открывается здесь же. Показываем то, что издание само отдало в
+// RSS: страницу издания мы не скачиваем — републикация чужой статьи целиком
+// не допускается (ТЗ §10.10). Если лента прислала только анонс, так и пишем.
+const reader = document.getElementById("reader");
+const readerBody = document.getElementById("reader-body");
+
+function openArticle(id) {
+  const a = feed.items.find((x) => x.id === id);
+  if (!a) return;
+  const col = "#" + (feed.sources.find((s) => s.id === a.source_id)?.colour || "8A9099");
+
+  const paragraphs = (a.body && a.body.length ? a.body : [a.excerpt].filter(Boolean))
+    .map((p) => `<p>${esc(p)}</p>`).join("");
+
+  const note = a.full_text
+    ? ""
+    : `<div class="reader-note">Источник отдаёт в ленте только анонс —
+         полный материал есть на сайте издания.</div>`;
+
+  readerBody.innerHTML = `
+    <div class="reader-top">
+      <span class="nsrc" style="color:${col};background:${col}22">${esc(a.source)}</span>
+      <span class="ntime">${timeAgo(a.published_at)}</span>
+      <button class="mbtn" id="reader-close" aria-label="Закрыть">✕</button>
+    </div>
+    <h1>${esc(a.title)}</h1>
+    ${a.image_url ? `<img class="reader-img" src="${esc(a.image_url)}" alt="" loading="lazy">` : ""}
+    <div class="reader-text">${paragraphs || "<p>Текст недоступен.</p>"}</div>
+    ${note}
+    <a class="reader-src" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">
+      Оригинал материала — ${esc(a.source)} ↗</a>`;
+
+  reader.classList.remove("hidden");
+  document.getElementById("reader-close").onclick = closeArticle;
+  readerBody.scrollTop = 0;
+  reader.focus();
+}
+
+function closeArticle() { reader.classList.add("hidden"); }
+
+// Закрытие: по фону и по Esc — иначе из читалки не выйти без мыши.
+reader.addEventListener("click", (e) => { if (e.target === reader) closeArticle(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !reader.classList.contains("hidden")) closeArticle();
+});
