@@ -6,6 +6,8 @@ import { renderTower } from "./timing.js";
 import { renderTelemetry } from "./telemetry.js";
 import { renderTyres } from "./tyres.js";
 import { MapView } from "./map.js";
+import { ensureSeason } from "./season.js";
+import { ensureNews } from "./news.js";
 
 const maps = [];
 const mapsWrap = document.getElementById("maps-wrap");
@@ -246,6 +248,38 @@ function wireControls() {
   // mode switch (Live requires openf1 source — informational for now)
   document.getElementById("mode-replay").onclick = () => setMode("replay");
   document.getElementById("mode-live").onclick = () => setMode("live");
+
+  wireViews();
+}
+
+// ---------- Переключение разделов ----------
+// Данные вкладки грузятся при первом открытии, а не на старте: экран гонки
+// не должен ждать сезон и новости.
+const VIEWS = {
+  race: { el: "view-race", btn: "v-race" },
+  season: { el: "view-season", btn: "v-season", load: ensureSeason },
+  news: { el: "view-news", btn: "v-news", load: ensureNews },
+};
+
+function showView(name) {
+  for (const [key, v] of Object.entries(VIEWS)) {
+    const on = key === name;
+    document.getElementById(v.el).classList.toggle("hidden", !on);
+    const btn = document.getElementById(v.btn);
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", String(on));
+  }
+  document.body.classList.toggle("on-race", name === "race");
+  // Плеер отсчитывает время только на видимом экране гонки.
+  if (name !== "race" && S.playing) stop();
+  VIEWS[name].load?.();
+}
+
+function wireViews() {
+  for (const [key, v] of Object.entries(VIEWS)) {
+    document.getElementById(v.btn).onclick = () => showView(key);
+  }
+  document.body.classList.add("on-race");
 }
 
 function setMode(mode) {

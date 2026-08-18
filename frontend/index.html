@@ -14,6 +14,12 @@
       <span class="brand-name">PIT&nbsp;WALL</span>
     </div>
 
+    <nav class="views" role="tablist" aria-label="Разделы">
+      <button class="view-btn active" id="v-race" role="tab" aria-selected="true">Гонка</button>
+      <button class="view-btn" id="v-season" role="tab" aria-selected="false">Сезон</button>
+      <button class="view-btn" id="v-news" role="tab" aria-selected="false">Новости</button>
+    </nav>
+
     <div class="session-controls">
       <label class="field">
         <span>Сессия</span>
@@ -39,7 +45,8 @@
     </div>
   </header>
 
-  <!-- ================= Main grid ================= -->
+  <!-- ================= Вид «Гонка» ================= -->
+  <div class="view" id="view-race">
   <main class="grid">
     <!-- Timing tower -->
     <section class="panel tower-panel" aria-label="Timing Tower">
@@ -117,6 +124,17 @@
       <input type="number" id="offset" value="0" step="0.5" /> с
     </label>
   </footer>
+  </div><!-- /view-race -->
+
+  <!-- ================= Вид «Сезон» ================= -->
+  <div class="view hidden" id="view-season">
+    <div class="page" id="season-body"></div>
+  </div>
+
+  <!-- ================= Вид «Новости» ================= -->
+  <div class="view hidden" id="view-news">
+    <div class="page" id="news-body"></div>
+  </div>
 
   <script type="module" src="/assets/js/app.js"></script>
 </body>

@@ -18,4 +18,7 @@ export const api = {
   frame: (sk, offset) => j(`/api/sessions/${sk}/frame?offset=${offset}`),
   telemetry: (sk, driver, offset, win) =>
     j(`/api/sessions/${sk}/telemetry?driver=${driver}&offset=${offset}&window=${win}`),
+
+  season: (refresh = false) => j(`/api/season${refresh ? "?refresh=true" : ""}`),
+  news: (refresh = false) => j(`/api/news${refresh ? "?refresh=true" : ""}`),
 };

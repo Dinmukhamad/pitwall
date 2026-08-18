@@ -60,6 +60,17 @@ class Settings(BaseSettings):
     # OpenF1 free tier is rate limited; keep concurrent fan-out modest.
     openf1_max_concurrency: int = 4
 
+    # --- Season (Jolpica-F1, преемник Ergast) — ТЗ §2.2 -------------------
+    jolpica_base_url: str = "https://api.jolpi.ca/ergast/f1/"
+    jolpica_timeout_s: float = 20.0
+    # Зачёты меняются раз в гоночный уик-энд — кэшируем надолго.
+    season_ttl_s: int = 1800
+
+    # --- News (ТЗ §10) ----------------------------------------------------
+    news_timeout_s: float = 20.0
+    news_ttl_s: int = 600          # SC-01: опрос раз в 5–15 мин
+    news_limit: int = 60
+
     # --- Cache (Redis, optional) ------------------------------------------
     # When unreachable the app transparently falls back to an in-process LRU.
     redis_url: str | None = Field(default=None)

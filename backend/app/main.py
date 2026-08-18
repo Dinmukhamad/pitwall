@@ -17,6 +17,8 @@ from app.core.logging import configure_logging, get_logger
 from app.db.database import db
 from app.db.repository import upsert_sessions
 from app.news.routes import router as news_router
+from app.season.routes import router as season_router
+from app.season.service import season_service
 from app.sources.factory import get_source
 
 log = get_logger("main")
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
     await source.startup()
     await cache.startup()
     await db.startup()
+    await season_service.startup()
     # Warm the session catalog into Postgres if available (best-effort).
     try:
         rows = await source.get_sessions()
@@ -52,6 +55,7 @@ async def lifespan(app: FastAPI):
         await source.shutdown()
         await cache.shutdown()
         await db.shutdown()
+        await season_service.shutdown()
         log.info("Shutdown complete")
 
 
@@ -88,6 +92,7 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(api_router)
+    app.include_router(season_router)
     app.include_router(news_router)
 
     if settings.serve_frontend and FRONTEND_DIR.exists():
