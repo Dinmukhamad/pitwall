@@ -118,13 +118,18 @@ function render(d) {
     return `<div class="tlmark" style="left:${x}%;background:${col}"></div>`;
   }).join("");
 
+  // Прошедшие этапы кликабельны — открывают протокол. Будущие некликабельны:
+  // результатов ещё нет, и кнопка вводила бы в заблуждение.
   const chips = d.calendar.map((r) => {
     const cls = r.is_next ? "next" : r.is_past ? "done" : "up";
     const date = r.date
       ? new Date(r.date).toLocaleDateString("ru", { day: "numeric", month: "short" }) : "";
-    return `<div class="rchip ${cls}">
-      <b>${r.round}. ${esc((r.name || "").replace(/ Grand Prix/i, ""))}</b>
-      <div class="c">${esc(r.country ?? "")}</div><div class="d">${date}</div></div>`;
+    const inner = `<b>${r.round}. ${esc((r.name || "").replace(/ Grand Prix/i, ""))}</b>
+      <div class="c">${esc(r.country ?? "")}</div><div class="d">${date}</div>`;
+    return r.is_past
+      ? `<button class="rchip ${cls} clickable" data-round="${r.round}"
+           title="Показать протокол этапа">${inner}</button>`
+      : `<div class="rchip ${cls}">${inner}</div>`;
   }).join("");
 
   body.innerHTML = `
@@ -158,4 +163,73 @@ function render(d) {
       <div class="chips-cal">${chips}</div></div>`;
 
   document.getElementById("season-refresh").onclick = () => loadSeason(true);
+  body.querySelectorAll(".rchip[data-round]").forEach((c) => {
+    c.onclick = () => openRound(+c.dataset.round);
+  });
+}
+
+// ---------- Протокол этапа ----------
+// Грузится по клику, а не вместе с обзором сезона: иначе один запрос тянул бы
+// результаты всех гонок разом.
+const reader = document.getElementById("reader");
+const readerBody = document.getElementById("reader-body");
+
+async function openRound(round) {
+  readerBody.innerHTML = `<div class="state">Загружаю протокол этапа…</div>`;
+  reader.classList.remove("hidden");
+  try {
+    const r = await api.seasonRound(round);
+    renderRound(r, round);
+  } catch (e) {
+    readerBody.innerHTML = `<div class="state"><b>Не удалось загрузить протокол</b>
+      <small>${esc(String(e))}</small></div>`;
+  }
+}
+
+function renderRound(r, round) {
+  if (r.error || !r.rows?.length) {
+    readerBody.innerHTML = `
+      <div class="reader-top"><button class="mbtn" id="round-close">✕</button></div>
+      <div class="state"><b>Протокол недоступен</b>${esc(r.error || "Результатов нет")}</div>`;
+    document.getElementById("round-close").onclick = () => reader.classList.add("hidden");
+    return;
+  }
+
+  const date = r.date
+    ? new Date(r.date).toLocaleDateString("ru", { day: "numeric", month: "long", year: "numeric" })
+    : "";
+
+  const rows = r.rows.map((x) => `
+    <div class="resrow">
+      <div class="rpos">${esc(x.position_text || "–")}</div>
+      <div class="teambar" style="background:#${esc(x.team_colour)}"></div>
+      <div class="rdrv">
+        <b>${esc(x.driver_code)}</b>
+        <span>${esc(x.team_name ?? "")}</span>
+      </div>
+      <div class="rtime${x.is_fastest_lap ? " fl" : ""}">${
+        esc(x.time || x.status || "")}</div>
+      <div class="rpts">${x.points ? "+" + x.points : ""}</div>
+    </div>`).join("");
+
+  readerBody.innerHTML = `
+    <div class="reader-top">
+      <span class="nsrc" style="color:var(--accent);background:var(--accent-soft)">Этап ${r.round}</span>
+      <span class="ntime">${date}</span>
+      <button class="mbtn" id="round-close" aria-label="Закрыть">✕</button>
+    </div>
+    <h1>${esc(r.name)}</h1>
+    <div class="sub">${esc(r.circuit ?? "")}${
+      r.locality ? ` · ${esc(r.locality)}, ${esc(r.country ?? "")}` : ""}</div>
+    <div class="restable">
+      <div class="reshead"><span>P</span><span></span><span>Пилот</span>
+        <span>Время / статус</span><span>Очки</span></div>
+      ${rows}
+    </div>
+    <div class="reader-note" style="background:transparent;border-color:var(--border);color:var(--dim)">
+      Источник — Jolpica-F1 (преемник Ergast). Фиолетовым отмечен быстрейший круг гонки.
+    </div>`;
+
+  document.getElementById("round-close").onclick = () => reader.classList.add("hidden");
+  readerBody.scrollTop = 0;
 }

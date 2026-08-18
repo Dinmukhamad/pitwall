@@ -57,9 +57,13 @@ class OpenF1Source(DataSource):
         return data if isinstance(data, list) else [data]
 
     # -- catalog ------------------------------------------------------------
-    async def get_sessions(self, *, year=None, country=None, session_name=None) -> RawList:
+    async def get_sessions(self, *, year=None, country=None, session_name=None,
+                           session_key=None) -> RawList:
+        # session_key — точечный запрос: без него поиск одной сессии заставлял
+        # бы выкачивать весь каталог с 2023 года.
         return await self._get("/sessions", {
             "year": year, "country_name": country, "session_name": session_name,
+            "session_key": session_key,
         })
 
     async def get_meetings(self, *, year=None) -> RawList:

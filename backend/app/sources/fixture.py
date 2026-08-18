@@ -71,8 +71,11 @@ class FixtureSource(DataSource):
         return rows
 
     # -- catalog ------------------------------------------------------------
-    async def get_sessions(self, *, year=None, country=None, session_name=None) -> RawList:
+    async def get_sessions(self, *, year=None, country=None, session_name=None,
+                           session_key=None) -> RawList:
         rows = self._rows("sessions")
+        if session_key is not None:
+            rows = [r for r in rows if r.get("session_key") == session_key]
         if year is not None:
             rows = [r for r in rows if r.get("year") == year]
         if country is not None:

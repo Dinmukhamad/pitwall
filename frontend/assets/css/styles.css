@@ -326,3 +326,29 @@
     #reader-body{border-radius:0;border:0;min-height:100%;padding:18px 18px 24px}
     #reader-body h1{font-size:21px}
   }
+
+  /* ---------- ПРОТОКОЛ ЭТАПА ---------- */
+  .rchip.clickable{font-family:var(--sans);text-align:left;cursor:pointer;width:100%;
+    transition:.14s}
+  .rchip.clickable:hover{border-color:var(--accent);background:var(--elev)}
+  .restable{margin-top:6px}
+  .reshead,.resrow{display:grid;grid-template-columns:34px 5px 1fr 130px 52px;
+    align-items:center;gap:10px;padding:7px 4px}
+  .reshead{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
+    font-weight:700;border-bottom:1px solid var(--border-soft)}
+  .resrow{border-bottom:1px solid var(--border-soft)}
+  .resrow:last-child{border-bottom:0}
+  .rpos{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:var(--muted)}
+  .rdrv{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+  .rdrv b{font-size:14px}
+  .rdrv span{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rtime{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rtime.fl{color:var(--purple)}
+  .rpts{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;font-size:13px}
+  #reader-body .sub{color:var(--muted);font-size:13px;margin:-8px 0 16px}
+
+  @media (max-width:560px){
+    .reshead,.resrow{grid-template-columns:28px 4px 1fr 88px 40px;gap:7px}
+    .rtime{font-size:11px}
+  }

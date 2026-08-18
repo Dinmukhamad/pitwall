@@ -15,7 +15,8 @@ import httpx
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.domain.season import (
-    ConstructorStanding, DriverStanding, RaceEvent, SeasonOverview,
+    ConstructorStanding, DriverStanding, RaceEvent, RaceResult, RaceResultRow,
+    SeasonOverview,
 )
 from app.season.teams import team_colour
 
@@ -106,6 +107,66 @@ def parse_constructor_standings(payload: dict) -> list[ConstructorStanding]:
     return out
 
 
+def parse_race_result(payload: dict) -> RaceResult:
+    """`/{year}/{round}/results.json` -> протокол одного этапа."""
+    table = (payload or {}).get("MRData", {}).get("RaceTable", {})
+    races = table.get("Races") or []
+    if not races:
+        return RaceResult(error="Результаты этапа ещё не опубликованы")
+
+    race = races[0]
+    circuit = race.get("Circuit", {}) or {}
+    location = circuit.get("Location", {}) or {}
+    try:
+        when = datetime.fromisoformat(
+            f"{race.get('date')}T{race.get('time') or '00:00:00Z'}".replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        when = None
+
+    rows: list[RaceResultRow] = []
+    for r in race.get("Results", []) or []:
+        drv = r.get("Driver", {}) or {}
+        team = r.get("Constructor", {}) or {}
+        fl = r.get("FastestLap") or {}
+        fl_time = (fl.get("Time") or {}).get("time")
+        # rank == "1" помечает быстрейший круг гонки (фиолетовый в таблице)
+        is_fl = str(fl.get("rank") or "") == "1"
+
+        pos_text = str(r.get("positionText") or r.get("position") or "")
+        position = _int(r.get("position"), 0) or None
+        # У сошедших positionText — буква; позиция как число смысла не имеет.
+        if not pos_text.isdigit():
+            position = None
+
+        rows.append(RaceResultRow(
+            position=position,
+            position_text=pos_text,
+            driver_code=drv.get("code") or (drv.get("familyName") or "")[:3].upper() or "UNK",
+            driver_name=" ".join(x for x in (drv.get("givenName"), drv.get("familyName")) if x) or None,
+            driver_number=_int(r.get("number"), 0) or None,
+            team_name=team.get("name"),
+            team_colour=team_colour(team.get("constructorId"), team.get("name")),
+            grid=_int(r.get("grid"), 0) or None,
+            laps=_int(r.get("laps"), 0) or None,
+            status=r.get("status"),
+            time=(r.get("Time") or {}).get("time"),
+            points=_num(r.get("points")),
+            fastest_lap=fl_time,
+            is_fastest_lap=is_fl,
+        ))
+
+    return RaceResult(
+        season=str(table.get("season") or race.get("season") or ""),
+        round=_int(race.get("round")),
+        name=race.get("raceName") or "",
+        circuit=circuit.get("circuitName"),
+        country=location.get("country"),
+        locality=location.get("locality"),
+        date=when,
+        rows=rows,
+    )
+
+
 def assemble(calendar_payload: dict, drivers_payload: dict,
              constructors_payload: dict, now: datetime) -> SeasonOverview:
     """Собрать обзор сезона из трёх ответов Jolpica."""
@@ -161,3 +222,13 @@ class JolpicaClient:
         drivers = await j("current/driverStandings.json")
         constructors = await j("current/constructorStandings.json")
         return assemble(calendar, drivers, constructors, datetime.now(timezone.utc))
+
+    async def fetch_race_result(self, round_no: int) -> RaceResult:
+        """Протокол одного этапа текущего сезона."""
+        if self._client is None:
+            await self.startup()
+        assert self._client is not None
+        # limit=100: в гонке до 22 машин, но запас на дисквалификации и т.п.
+        r = await self._client.get(f"current/{round_no}/results.json?limit=100")
+        r.raise_for_status()
+        return parse_race_result(r.json())

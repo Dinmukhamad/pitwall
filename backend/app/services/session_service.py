@@ -33,23 +33,35 @@ def _ensure_aware(dt: datetime) -> datetime:
 class SessionService:
     # ---- catalog ---------------------------------------------------------
     async def list_sessions(self, year: int | None = None) -> list[SessionInfo]:
+        """Гонки сезона для выбора в интерфейсе.
+
+        Год обязателен по умолчанию: без него OpenF1 отдаёт все сессии начиная
+        с 2023-го — это тысячи записей и бесполезный список в выпадашке.
+        """
+        if year is None:
+            year = datetime.now(timezone.utc).year
+
         key = f"sessions:{year}"
         cached = await cache.get_json(key)
         if cached is None:
             rows = await get_source().get_sessions(year=year, session_name="Race")
-            if not rows:  # fixture may not filter by name; fall back
+            if not rows:  # у фикстура нет фильтра по имени — берём как есть
                 rows = await get_source().get_sessions(year=year)
             cached = rows
             await cache.set_json(key, rows, ttl=settings.cache_ttl_static_s)
-        return [self._session_info(r) for r in cached]
+
+        sessions = [self._session_info(r) for r in cached]
+        # По возрастанию даты: календарь читается сверху вниз, как этапы шли.
+        sessions.sort(key=lambda s: s.date_start or datetime.min.replace(tzinfo=timezone.utc))
+        return sessions
 
     async def get_session_info(self, session_key: int) -> SessionInfo | None:
         for s in await self.list_sessions():
             if s.session_key == session_key:
                 s.total_laps = await self._total_laps(session_key)
                 return s
-        # not in default list — query directly
-        rows = await get_source().get_sessions()
+        # Не нашлась в текущем сезоне — точечный запрос по ключу.
+        rows = await get_source().get_sessions(session_key=session_key)
         for r in rows:
             if r.get("session_key") == session_key:
                 info = self._session_info(r)

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 os.environ.setdefault("PITWALL_DATA_SOURCE", "fixture")
 
 from app.season.jolpica import (  # noqa: E402
-    assemble, parse_constructor_standings, parse_driver_standings,
+    assemble, parse_constructor_standings, parse_driver_standings, parse_race_result,
 )
 from app.season.teams import team_colour  # noqa: E402
 
@@ -92,3 +92,63 @@ def test_season_finished_has_no_next_race():
     o = assemble(CALENDAR, DRIVERS, CONSTRUCTORS, later)
     assert o.races_done == o.races_total == 4
     assert o.next_race is None and o.days_to_next is None
+
+
+# --- Протокол этапа --------------------------------------------------------
+
+RESULTS = {"MRData": {"RaceTable": {"season": "2026", "round": "11", "Races": [{
+    "season": "2026", "round": "11", "raceName": "Hungarian Grand Prix",
+    "date": "2026-07-26", "time": "13:00:00Z",
+    "Circuit": {"circuitName": "Hungaroring",
+                "Location": {"locality": "Budapest", "country": "Hungary"}},
+    "Results": [
+        {"number": "1", "position": "1", "positionText": "1", "points": "25",
+         "Driver": {"code": "NOR", "givenName": "Lando", "familyName": "Norris"},
+         "Constructor": {"constructorId": "mclaren", "name": "McLaren"},
+         "grid": "1", "laps": "70", "status": "Finished",
+         "Time": {"millis": "5400000", "time": "1:30:00.000"},
+         "FastestLap": {"rank": "2", "lap": "44", "Time": {"time": "1:19.500"}}},
+        {"number": "16", "position": "2", "positionText": "2", "points": "18",
+         "Driver": {"code": "LEC", "givenName": "Charles", "familyName": "Leclerc"},
+         "Constructor": {"constructorId": "ferrari", "name": "Ferrari"},
+         "grid": "3", "laps": "70", "status": "Finished",
+         "Time": {"time": "+4.512"},
+         "FastestLap": {"rank": "1", "lap": "51", "Time": {"time": "1:19.106"}}},
+        {"number": "3", "position": "20", "positionText": "R", "points": "0",
+         "Driver": {"code": "VER", "givenName": "Max", "familyName": "Verstappen"},
+         "Constructor": {"constructorId": "red_bull", "name": "Red Bull"},
+         "grid": "2", "laps": "31", "status": "Engine"},
+    ],
+}]}}}
+
+
+def test_race_result_parsed():
+    r = parse_race_result(RESULTS)
+    assert r.round == 11 and r.season == "2026"
+    assert r.name == "Hungarian Grand Prix" and r.circuit == "Hungaroring"
+    assert len(r.rows) == 3
+
+    win = r.rows[0]
+    assert win.position == 1 and win.points == 25.0
+    assert win.driver_code == "NOR" and win.team_colour == "FF8000"
+    assert win.time == "1:30:00.000"
+
+    # Быстрейший круг — у того, у кого rank == 1, а не у победителя.
+    assert win.is_fastest_lap is False
+    assert r.rows[1].is_fastest_lap is True
+    assert r.rows[1].fastest_lap == "1:19.106"
+
+
+def test_retired_driver_has_no_numeric_position():
+    """У сошедшего positionText — буква; числовая позиция смысла не имеет."""
+    r = parse_race_result(RESULTS)
+    dnf = r.rows[2]
+    assert dnf.position_text == "R"
+    assert dnf.position is None
+    assert dnf.status == "Engine" and dnf.points == 0.0
+    assert dnf.time is None
+
+
+def test_missing_results_reported_not_faked():
+    r = parse_race_result({"MRData": {"RaceTable": {"Races": []}}})
+    assert r.rows == [] and r.error

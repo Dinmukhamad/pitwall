@@ -20,5 +20,6 @@ export const api = {
     j(`/api/sessions/${sk}/telemetry?driver=${driver}&offset=${offset}&window=${win}`),
 
   season: (refresh = false) => j(`/api/season${refresh ? "?refresh=true" : ""}`),
+  seasonRound: (round) => j(`/api/season/round/${round}`),
   news: (refresh = false) => j(`/api/news${refresh ? "?refresh=true" : ""}`),
 };

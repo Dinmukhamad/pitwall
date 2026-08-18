@@ -39,6 +39,35 @@ class ConstructorStanding(BaseModel):
     wins: int = 0
 
 
+class RaceResultRow(BaseModel):
+    position: int | None = None     # None — сход (в Ergast positionText = R/D/…)
+    position_text: str = ""         # «1», «R», «DNF» — как отдал источник
+    driver_code: str = "UNK"
+    driver_name: str | None = None
+    driver_number: int | None = None
+    team_name: str | None = None
+    team_colour: str = "8A9099"
+    grid: int | None = None
+    laps: int | None = None
+    status: str | None = None       # «Finished», «+1 Lap», «Engine»…
+    time: str | None = None         # время победителя или отставание
+    points: float = 0.0
+    fastest_lap: str | None = None
+    is_fastest_lap: bool = False    # быстрейший круг гонки
+
+
+class RaceResult(BaseModel):
+    season: str = ""
+    round: int = 0
+    name: str = ""
+    circuit: str | None = None
+    country: str | None = None
+    locality: str | None = None
+    date: datetime | None = None
+    rows: list[RaceResultRow] = Field(default_factory=list)
+    error: str | None = None
+
+
 class SeasonOverview(BaseModel):
     season: str
     races_total: int = 0

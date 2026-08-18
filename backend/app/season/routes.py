@@ -1,9 +1,9 @@
 """API раздела «Сезон»."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Path, Query
 
-from app.domain.season import SeasonOverview
+from app.domain.season import RaceResult, SeasonOverview
 from app.season.service import season_service
 
 router = APIRouter(prefix="/api/season", tags=["season"])
@@ -19,3 +19,16 @@ async def season_overview(
     клиент показывает состояние ошибки, а не пустые таблицы.
     """
     return await season_service.get_overview(force=refresh)
+
+
+@router.get("/round/{round_no}", response_model=RaceResult)
+async def race_result(
+    round_no: int = Path(..., ge=1, le=30, description="номер этапа сезона"),
+    refresh: bool = Query(default=False),
+) -> RaceResult:
+    """Протокол одного этапа: кто где финишировал, очки, быстрейший круг.
+
+    Загружается по клику на этап в календаре, а не вместе с обзором сезона —
+    иначе один запрос тянул бы результаты всех гонок разом.
+    """
+    return await season_service.get_race_result(round_no, force=refresh)

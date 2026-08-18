@@ -38,6 +38,7 @@ class DataSource(abc.ABC):
         year: int | None = None,
         country: str | None = None,
         session_name: str | None = None,
+        session_key: int | None = None,
     ) -> RawList: ...
 
     @abc.abstractmethod
