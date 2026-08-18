@@ -1,0 +1,44 @@
+# Render Blueprint — деплой одним нажатием (Postgres + Redis + веб-сервис).
+# Импортируйте репозиторий в Render → New → Blueprint, Render прочитает этот файл.
+# Веб-сервис отдаёт и API, и статический фронтенд (FastAPI монтирует /frontend).
+
+databases:
+  - name: pitwall-db
+    databaseName: pitwall
+    user: pitwall
+    plan: free            # free-инстанс живёт ~30 дней; поднимите план при необходимости
+
+services:
+  # --- Redis / Key Value (кэш повторов, TZ DR-04) ---
+  - type: redis
+    name: pitwall-redis
+    plan: free
+    ipAllowList: []        # только внутренняя сеть Render
+    maxmemoryPolicy: allkeys-lru
+
+  # --- Веб-сервис: FastAPI + статический фронт ---
+  - type: web
+    name: pitwall
+    runtime: python
+    plan: free             # free-веб «засыпает» при простое; первый запрос будит его
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && python scripts/generate_fixture.py"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      # Источник данных: fixture (демо, всегда работает) или openf1 (живой API).
+      # Поменять можно прямо в дашборде Render без редеплоя кода.
+      - key: PITWALL_DATA_SOURCE
+        value: fixture
+      # Postgres и Redis подключаются автоматически из ресурсов выше.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pitwall-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: pitwall-redis
+          property: connectionString
